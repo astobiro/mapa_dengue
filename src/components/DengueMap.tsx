@@ -44,6 +44,99 @@ export function getMetricLabel(_metric?: ChoroplethMetric): string {
   return 'Número de Casos Prováveis';
 }
 
+// Funções utilitárias seguras para navegação no Leaflet sem NaN
+function isSafeBounds(bounds: any): bounds is L.LatLngBounds {
+  if (!bounds || typeof bounds.isValid !== 'function') return false;
+  try {
+    if (!bounds.isValid()) return false;
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    if (!sw || !ne) return false;
+    if (typeof sw.lat !== 'number' || typeof sw.lng !== 'number' || typeof ne.lat !== 'number' || typeof ne.lng !== 'number') return false;
+    if (isNaN(sw.lat) || isNaN(sw.lng) || isNaN(ne.lat) || isNaN(ne.lng)) return false;
+    if (!isFinite(sw.lat) || !isFinite(sw.lng) || !isFinite(ne.lat) || !isFinite(ne.lng)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function safeFlyToBounds(
+  map: L.Map | null | undefined,
+  bounds: any,
+  options: L.FitBoundsOptions & { duration?: number } = {}
+) {
+  if (!map || !isSafeBounds(bounds)) return;
+  try {
+    const size = map.getSize();
+    if (!size || size.x <= 40 || size.y <= 40) {
+      const center = bounds.getCenter();
+      if (center && isFinite(center.lat) && isFinite(center.lng)) {
+        map.setView(center, 12);
+      }
+      return;
+    }
+
+    let rawPadX = 20;
+    let rawPadY = 20;
+    if (options.padding) {
+      if (Array.isArray(options.padding)) {
+        rawPadX = Number(options.padding[0]) || 20;
+        rawPadY = Number(options.padding[1]) || 20;
+      } else if (typeof options.padding === 'object' && 'x' in options.padding && 'y' in options.padding) {
+        rawPadX = Number((options.padding as L.Point).x) || 20;
+        rawPadY = Number((options.padding as L.Point).y) || 20;
+      }
+    }
+    const paddingX = Math.min(rawPadX, Math.floor(size.x / 4));
+    const paddingY = Math.min(rawPadY, Math.floor(size.y / 4));
+    const safeOptions = {
+      ...options,
+      padding: [paddingX, paddingY] as [number, number]
+    };
+
+    try {
+      map.flyToBounds(bounds, safeOptions);
+    } catch {
+      map.fitBounds(bounds, { padding: [paddingX, paddingY], maxZoom: safeOptions.maxZoom });
+    }
+  } catch (err) {
+    console.warn('safeFlyToBounds error handled:', err);
+  }
+}
+
+function safeFlyTo(
+  map: L.Map | null | undefined,
+  center: { lat: number; lng: number } | [number, number] | null | undefined,
+  zoom: number | undefined | null,
+  options: L.ZoomPanOptions & { duration?: number } = {}
+) {
+  if (!map || !center) return;
+  try {
+    let lat: number | undefined;
+    let lng: number | undefined;
+    if (Array.isArray(center)) {
+      lat = center[0];
+      lng = center[1];
+    } else if (typeof center === 'object' && 'lat' in center && 'lng' in center) {
+      lat = (center as any).lat;
+      lng = (center as any).lng;
+    }
+    if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng) || !isFinite(lat) || !isFinite(lng)) {
+      return;
+    }
+    const safeZoom = (typeof zoom === 'number' && !isNaN(zoom) && isFinite(zoom)) ? zoom : map.getZoom() || 12;
+
+    try {
+      map.flyTo([lat, lng], safeZoom, options);
+    } catch {
+      map.setView([lat, lng], safeZoom);
+    }
+  } catch (err) {
+    console.warn('safeFlyTo error handled:', err);
+  }
+}
+
 export const DengueMap: React.FC<DengueMapProps> = ({
   geoJsonData,
   bairrosData,
@@ -67,6 +160,7 @@ export const DengueMap: React.FC<DengueMapProps> = ({
   const initialFitDoneRef = useRef(false);
   // Guardar posição e zoom anteriores ao clique no bairro para restaurar ao fechar a janela
   const previousViewStateRef = useRef<{ center: L.LatLng; zoom: number } | null>(null);
+  const prevTargetDistrictRef = useRef<string | null>(null);
   const [showLayerMenu, setShowLayerMenu] = useState(false);
   const [isLegendCollapsed, setIsLegendCollapsed] = useState<boolean>(Boolean(isEmbedMode));
 
@@ -318,8 +412,8 @@ export const DengueMap: React.FC<DengueMapProps> = ({
               onSelectBairro(null); // Limpar seleção de bairro para destacar o distrito
               try {
                 const bounds = e.target.getBounds();
-                if (bounds.isValid()) {
-                  mapInstanceRef.current?.flyToBounds(bounds, {
+                if (isSafeBounds(bounds)) {
+                  safeFlyToBounds(mapInstanceRef.current, bounds, {
                     padding: [50, 50],
                     maxZoom: 13,
                     duration: 1.2
@@ -341,7 +435,8 @@ export const DengueMap: React.FC<DengueMapProps> = ({
 
     try {
       const bounds = geoJsonLayer.getBounds();
-      if (bounds.isValid() && !initialFitDoneRef.current) {
+      if (isSafeBounds(bounds) && !initialFitDoneRef.current) {
+        map.invalidateSize();
         map.fitBounds(bounds, { padding: [20, 20], maxZoom: 14 });
         initialFitDoneRef.current = true;
       }
@@ -362,11 +457,15 @@ export const DengueMap: React.FC<DengueMapProps> = ({
   // Foco com zoom quando um distrito é selecionado pelo painel, filtro ou cabeçalho
   useEffect(() => {
     const targetDistrict = (filterDistrito && filterDistrito !== 'all') ? filterDistrito : selectedDistrictName;
+    const prevDistrict = prevTargetDistrictRef.current;
+    prevTargetDistrictRef.current = targetDistrict || null;
+
     if (!targetDistrict) {
-      if (geoJsonLayerRef.current && mapInstanceRef.current && initialFitDoneRef.current) {
+      // Somente reseta a visão caso houvesse um distrito ativo previamente
+      if (prevDistrict && geoJsonLayerRef.current && mapInstanceRef.current && initialFitDoneRef.current) {
         const bounds = geoJsonLayerRef.current.getBounds();
-        if (bounds.isValid()) {
-          mapInstanceRef.current.flyToBounds(bounds, { padding: [20, 20], duration: 1 });
+        if (isSafeBounds(bounds)) {
+          safeFlyToBounds(mapInstanceRef.current, bounds, { padding: [20, 20], duration: 1 });
         }
       }
       return;
@@ -383,8 +482,8 @@ export const DengueMap: React.FC<DengueMapProps> = ({
         if (normalizeKey(dName) === normalizeKey(targetDistrict)) {
           try {
             const bounds = layer.getBounds();
-            if (bounds.isValid()) {
-              mapInstanceRef.current?.flyToBounds(bounds, {
+            if (isSafeBounds(bounds)) {
+              safeFlyToBounds(mapInstanceRef.current, bounds, {
                 padding: [50, 50],
                 maxZoom: 13,
                 duration: 1.2
@@ -395,7 +494,8 @@ export const DengueMap: React.FC<DengueMapProps> = ({
       });
     } else {
       // No modo bairro, calcular envelope unificado de todos os bairros daquele distrito
-      const groupBounds = L.latLngBounds([]);
+      let hasMatchedLayers = false;
+      let groupBounds: L.LatLngBounds | null = null;
       geoJsonLayerRef.current.eachLayer((layer: any) => {
         const feat = layer.feature;
         if (!feat) return;
@@ -404,14 +504,19 @@ export const DengueMap: React.FC<DengueMapProps> = ({
         if (normalizeKey(dName) === normalizeKey(targetDistrict)) {
           try {
             const bounds = layer.getBounds();
-            if (bounds.isValid()) {
-              groupBounds.extend(bounds);
+            if (isSafeBounds(bounds)) {
+              if (!groupBounds) {
+                groupBounds = L.latLngBounds(bounds.getSouthWest(), bounds.getNorthEast());
+              } else {
+                groupBounds.extend(bounds);
+              }
+              hasMatchedLayers = true;
             }
           } catch {}
         }
       });
-      if (groupBounds.isValid()) {
-        mapInstanceRef.current?.flyToBounds(groupBounds, {
+      if (hasMatchedLayers && groupBounds && isSafeBounds(groupBounds)) {
+        safeFlyToBounds(mapInstanceRef.current, groupBounds, {
           padding: [50, 50],
           maxZoom: 13,
           duration: 1.2
@@ -430,10 +535,14 @@ export const DengueMap: React.FC<DengueMapProps> = ({
     if (targetId) {
       // Se estamos prestes a dar zoom no bairro e ainda não salvamos o estado prévio, salvar agora
       if (!previousViewStateRef.current) {
-        previousViewStateRef.current = {
-          center: map.getCenter(),
-          zoom: map.getZoom()
-        };
+        const c = map.getCenter();
+        const z = map.getZoom();
+        if (c && isFinite(c.lat) && isFinite(c.lng) && isFinite(z)) {
+          previousViewStateRef.current = {
+            center: c,
+            zoom: z
+          };
+        }
       }
 
       if (!geoJsonLayerRef.current) return;
@@ -449,8 +558,8 @@ export const DengueMap: React.FC<DengueMapProps> = ({
         if (matches) {
           try {
             const bounds = layer.getBounds();
-            if (bounds.isValid()) {
-              mapInstanceRef.current?.flyToBounds(bounds, {
+            if (isSafeBounds(bounds)) {
+              safeFlyToBounds(map, bounds, {
                 padding: [40, 40],
                 maxZoom: 14,
                 duration: 1.2
@@ -464,9 +573,13 @@ export const DengueMap: React.FC<DengueMapProps> = ({
       if (previousViewStateRef.current) {
         const { center, zoom } = previousViewStateRef.current;
         previousViewStateRef.current = null;
-        map.flyTo(center, zoom, {
-          duration: 1.0
-        });
+        if (center && isFinite(center.lat) && isFinite(center.lng) && isFinite(zoom)) {
+          safeFlyTo(map, center, zoom, {
+            duration: 1.0
+          });
+        } else {
+          handleResetBounds();
+        }
       }
     }
   }, [highlightSearchBairroId, selectedBairroId, viewLevel]);
@@ -474,8 +587,8 @@ export const DengueMap: React.FC<DengueMapProps> = ({
   const handleResetBounds = () => {
     if (geoJsonLayerRef.current && mapInstanceRef.current) {
       const bounds = geoJsonLayerRef.current.getBounds();
-      if (bounds.isValid()) {
-        mapInstanceRef.current.flyToBounds(bounds, { padding: [20, 20], duration: 1 });
+      if (isSafeBounds(bounds)) {
+        safeFlyToBounds(mapInstanceRef.current, bounds, { padding: [20, 20], duration: 1 });
       }
     }
   };

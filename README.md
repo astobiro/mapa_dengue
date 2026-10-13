@@ -58,7 +58,8 @@ npm run preview
 ## 🗺️ Estrutura de Pastas GeoJSON (GitHub)
 
 O projeto possui uma pasta dedicada para armazenar e versionar a malha geográfica dos bairros de São Luís:
-- `geojson/sao_luis_bairros.geojson` (no repositório GitHub)
-- `public/geojson/sao_luis_bairros.geojson` (servido estaticamente no build do GitHub Pages)
+- `geojson/bairros_limpos.geojson` (no repositório GitHub)
+- `public/geojson/bairros_limpos.geojson` (servido estaticamente no build do GitHub Pages)
+- Compatibilidade: `geojson/sao_luis_bairros.geojson` e `public/geojson/sao_luis_bairros.geojson`
 
-O aplicativo tenta carregar dinamicamente o arquivo `./geojson/sao_luis_bairros.geojson` por padrão caso nenhum arquivo alternativo seja fornecido via parâmetro `?geojson=...` ou upload no navegador.
+O aplicativo tenta carregar dinamicamente o arquivo `./geojson/bairros_limpos.geojson` por padrão caso nenhum arquivo alternativo seja fornecido via parâmetro `?geojson=...` ou upload no navegador.
