@@ -50,7 +50,7 @@ export const MinimizedEmbedFilters: React.FC<MinimizedEmbedFiltersProps> = ({
   onExitEmbedMode,
   lastUpdatedText
 }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
 
@@ -76,15 +76,16 @@ export const MinimizedEmbedFilters: React.FC<MinimizedEmbedFiltersProps> = ({
       <div className="absolute top-3 left-3 z-30 flex items-center gap-2">
         <button
           onClick={() => setIsCollapsed(false)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/95 hover:bg-slate-850 text-slate-200 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs font-semibold transition active:scale-95 group"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/95 hover:bg-slate-800 text-slate-200 border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs font-semibold transition active:scale-95 group"
           title="Expandir filtros do mapa"
         >
           <SlidersHorizontal className="w-3.5 h-3.5 text-rose-400 group-hover:rotate-45 transition-transform" />
           <span>Filtros</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30">
             {selectedWeek} • {viewLevel === 'bairro' ? 'Bairros' : 'Distritos'}
+            {filterDistrito && filterDistrito !== 'all' ? ` • ${filterDistrito}` : ''}
           </span>
-          <ChevronDown className="w-3 h-3 text-slate-400" />
+          <ChevronDown className="w-3 h-3 text-slate-400 group-hover:text-white transition-colors" />
         </button>
 
         {onExitEmbedMode && (

@@ -457,6 +457,7 @@ export default function App() {
           onChangeBasemap={setBasemap}
           highlightSearchBairroId={searchedBairroId}
           filterDistrito={filterDistrito}
+          isEmbedMode={isEmbedMode}
         />
 
         {/* Dossiê do Bairro ou Distrito Selecionado */}

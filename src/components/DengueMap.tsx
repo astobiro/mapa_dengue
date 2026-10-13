@@ -11,7 +11,7 @@ import {
 } from '../types/dengue';
 import { findBairroData, normalizeKey } from '../services/sheetsService';
 import { createDissolvedDistrictsGeoJson } from '../utils/districtGeoJson';
-import { Layers, Maximize2, ShieldAlert } from 'lucide-react';
+import { ChevronDown, ChevronUp, Layers, Maximize2, ShieldAlert } from 'lucide-react';
 
 interface DengueMapProps {
   geoJsonData: GeoJsonNeighborhoodCollection;
@@ -27,6 +27,7 @@ interface DengueMapProps {
   onChangeBasemap: (theme: BasemapTheme) => void;
   highlightSearchBairroId?: string | null;
   filterDistrito?: string;
+  isEmbedMode?: boolean;
 }
 
 // Estilo de cores epidemiológicas oficiais baseadas no volume de casos prováveis
@@ -56,7 +57,8 @@ export const DengueMap: React.FC<DengueMapProps> = ({
   basemap,
   onChangeBasemap,
   highlightSearchBairroId,
-  filterDistrito
+  filterDistrito,
+  isEmbedMode
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -64,6 +66,13 @@ export const DengueMap: React.FC<DengueMapProps> = ({
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   const initialFitDoneRef = useRef(false);
   const [showLayerMenu, setShowLayerMenu] = useState(false);
+  const [isLegendCollapsed, setIsLegendCollapsed] = useState<boolean>(Boolean(isEmbedMode));
+
+  useEffect(() => {
+    if (isEmbedMode) {
+      setIsLegendCollapsed(true);
+    }
+  }, [isEmbedMode]);
 
   // Dissolver polígonos dos bairros em contornos externos unificados por distrito
   const dissolvedDistrictsGeoJson = useMemo(() => {
@@ -502,41 +511,69 @@ export const DengueMap: React.FC<DengueMapProps> = ({
         </div>
       </div>
 
-      {/* Legenda Epidemiológica Flutuante (Inferior Esquerda) */}
-      <div className="absolute bottom-4 left-4 z-10 max-w-[280px] bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3 shadow-xl text-slate-200">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-white mb-2">
-          <ShieldAlert className="w-4 h-4 text-rose-400 flex-shrink-0" />
-          <span className="truncate">Número de Casos Prováveis</span>
-          <span className="text-[10px] font-normal text-slate-400">({viewLevel === 'distrito' ? 'Distritos' : 'Bairros'})</span>
-        </div>
+      {/* Legenda Epidemiológica Flutuante (Inferior Esquerda) com tamanho compacto e minimização */}
+      <div className="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 z-10 transition-all">
+        {isLegendCollapsed ? (
+          <button
+            onClick={() => setIsLegendCollapsed(false)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/95 hover:bg-slate-800 text-slate-200 border border-slate-700/80 shadow-2xl backdrop-blur-md text-[11px] font-semibold transition active:scale-95 group"
+            title="Expandir legenda de cores epidemiológicas"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
+            <span>Legenda</span>
+            <div className="flex items-center gap-0.5 ml-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#991b1b]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#ea580c]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
+            </div>
+            <ChevronUp className="w-3 h-3 text-slate-400 group-hover:text-white transition-colors" />
+          </button>
+        ) : (
+          <div className="max-w-[200px] sm:max-w-[210px] bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-xl p-2 sm:p-2.5 shadow-2xl text-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between gap-1 text-[11px] font-semibold text-white mb-1.5 pb-1 border-b border-slate-800">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
+                <span className="truncate">Casos Prováveis</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLegendCollapsed(true)}
+                className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                title="Minimizar legenda"
+              >
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </div>
 
-        <div className="space-y-1.5 text-[11px]">
-          <div className="flex items-center gap-2">
-            <span className="w-3.5 h-3.5 rounded-md bg-[#991b1b] flex-shrink-0" />
-            <span className="text-slate-300 font-medium">≥ 300 casos</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3.5 h-3.5 rounded-md bg-[#dc2626] flex-shrink-0" />
-            <span className="text-slate-300 font-medium">150 a 299 casos</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3.5 h-3.5 rounded-md bg-[#ea580c] flex-shrink-0" />
-            <span className="text-slate-300">60 a 149 casos</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3.5 h-3.5 rounded-md bg-[#f59e0b] flex-shrink-0" />
-            <span className="text-slate-300">25 a 59 casos</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3.5 h-3.5 rounded-md bg-[#10b981] flex-shrink-0" />
-            <span className="text-slate-300">&lt; 25 casos</span>
-          </div>
-        </div>
+            <div className="space-y-1 text-[10px]">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#991b1b] flex-shrink-0" />
+                <span className="text-slate-300 font-medium">≥ 300 casos</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#dc2626] flex-shrink-0" />
+                <span className="text-slate-300 font-medium">150 a 299 casos</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#ea580c] flex-shrink-0" />
+                <span className="text-slate-300">60 a 149 casos</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#f59e0b] flex-shrink-0" />
+                <span className="text-slate-300">25 a 59 casos</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#10b981] flex-shrink-0" />
+                <span className="text-slate-300">&lt; 25 casos</span>
+              </div>
+            </div>
 
-        <div className="mt-2.5 pt-2 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
-          <span>{viewLevel === 'distrito' ? 'Visão: Apenas Contorno do Distrito' : 'Visão: Bairros'}</span>
-          <span>Clique para focar</span>
-        </div>
+            <div className="mt-1.5 pt-1 border-t border-slate-800/80 text-[9px] text-slate-400 flex items-center justify-between">
+              <span>{viewLevel === 'distrito' ? 'Distritos' : 'Bairros'}</span>
+              <span>Clique p/ focar</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
