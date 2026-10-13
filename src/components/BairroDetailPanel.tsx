@@ -13,13 +13,15 @@ interface BairroDetailPanelProps {
   districtInfo?: DistrictEpidemiology | null;
   viewLevel?: MapViewLevel;
   onClose: () => void;
+  isEmbedMode?: boolean;
 }
 
 export const BairroDetailPanel: React.FC<BairroDetailPanelProps> = ({ 
   bairro, 
   districtInfo,
   viewLevel = 'bairro',
-  onClose 
+  onClose,
+  isEmbedMode = false
 }) => {
   if (!bairro && !districtInfo) return null;
 
@@ -64,7 +66,9 @@ export const BairroDetailPanel: React.FC<BairroDetailPanelProps> = ({
   const status = getCasesStatus(totalCasos);
 
   return (
-    <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-20 w-80 sm:w-96 max-h-[calc(100%-2rem)] flex flex-col bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-200">
+    <div className={`absolute ${
+      isEmbedMode ? 'top-16 left-3 sm:top-16 sm:left-3 max-h-[calc(100%-5rem)]' : 'top-3 left-3 sm:top-4 sm:left-4 max-h-[calc(100%-2rem)]'
+    } z-20 w-80 sm:w-96 flex flex-col bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-200`}>
       {/* Cabeçalho */}
       <div className="p-4 border-b border-slate-800 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 relative">
         <button

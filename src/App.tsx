@@ -17,8 +17,10 @@ import {
   findBairroData, 
   normalizeKey 
 } from './services/sheetsService';
+import { normalizeGeoJsonCollection } from './utils/districtGeoJson';
 import { DengueMap } from './components/DengueMap';
 import { EpidemiologyHeader } from './components/EpidemiologyHeader';
+import { MinimizedEmbedFilters } from './components/MinimizedEmbedFilters';
 import { BairroDetailPanel } from './components/BairroDetailPanel';
 import { GoogleSheetsConfigModal } from './components/GoogleSheetsConfigModal';
 import { LookerStudioEmbedModal } from './components/LookerStudioEmbedModal';
@@ -27,6 +29,7 @@ import { OfflineIndicator } from './components/OfflineIndicator';
 
 const LOCAL_STORAGE_KEY_CONFIG = 'dengue_slz_sheets_config_v1';
 const LOCAL_STORAGE_KEY_GEOJSON = 'dengue_slz_custom_geojson_v1';
+const LOCAL_STORAGE_KEY_GEOJSON_URL = 'dengue_slz_custom_geojson_url_v1';
 
 export default function App() {
   const queryParams = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -43,6 +46,10 @@ export default function App() {
   // Camada padrão: OpenStreetMap ('osm')
   const initialTheme = (queryParams.get('theme') as BasemapTheme) || 'osm';
   const initialRefresh = queryParams.get('refresh') ? Number(queryParams.get('refresh')) : 300;
+  const initialWeek = queryParams.get('week') || '';
+  const initialDistrito = queryParams.get('distrito') || 'all';
+  const initialViewLevel: MapViewLevel = queryParams.get('view') === 'distrito' ? 'distrito' : 'bairro';
+  const initialGeoJsonParam = queryParams.get('geojson') || '';
 
   // Estado da Configuração da Planilha
   const [sheetsConfig, setSheetsConfig] = useState<SheetsConfig>(() => {
@@ -63,6 +70,11 @@ export default function App() {
     };
   });
 
+  // URL do GeoJSON personalizado (caso importado via URL)
+  const [customGeoJsonUrl, setCustomGeoJsonUrl] = useState<string>(() => {
+    return initialGeoJsonParam || localStorage.getItem(LOCAL_STORAGE_KEY_GEOJSON_URL) || '';
+  });
+
   // Camada GeoJSON
   const [geoJsonData, setGeoJsonData] = useState<GeoJsonNeighborhoodCollection>(() => {
     try {
@@ -74,13 +86,13 @@ export default function App() {
 
   // Dados Epidemiológicos agrupados por semana
   const [epidemiologyWeeks, setEpidemiologyWeeks] = useState<Record<string, WeeklyDataSummary>>(INITIAL_EPIDEMIOLOGY_DATA);
-  const [selectedWeek, setSelectedWeek] = useState<string>('SE 14');
+  const [selectedWeek, setSelectedWeek] = useState<string>(initialWeek || 'SE 14');
 
   // Estados de Interface do Usuário
   const [metric, setMetric] = useState<ChoroplethMetric>(initialMetric);
   const [basemap, setBasemap] = useState<BasemapTheme>(initialTheme);
-  const [viewLevel, setViewLevel] = useState<MapViewLevel>('bairro'); // 'bairro' ou 'distrito'
-  const [filterDistrito, setFilterDistrito] = useState<string>('all');
+  const [viewLevel, setViewLevel] = useState<MapViewLevel>(initialViewLevel); // 'bairro' ou 'distrito'
+  const [filterDistrito, setFilterDistrito] = useState<string>(initialDistrito);
   const [selectedBairroId, setSelectedBairroId] = useState<string | null>(null);
   const [selectedDistrictName, setSelectedDistrictName] = useState<string | null>(null);
   const [searchedBairroId, setSearchedBairroId] = useState<string | null>(null);
@@ -94,6 +106,25 @@ export default function App() {
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
   const [isLookerModalOpen, setIsLookerModalOpen] = useState(false);
   const [isGeoJsonModalOpen, setIsGeoJsonModalOpen] = useState(false);
+
+  // Carregar GeoJSON via parâmetro URL caso fornecido
+  useEffect(() => {
+    if (initialGeoJsonParam) {
+      fetch(initialGeoJsonParam)
+        .then((res) => {
+          if (!res.ok) throw new Error('Falha ao carregar GeoJSON da URL');
+          return res.json();
+        })
+        .then((data) => {
+          const normalized = normalizeGeoJsonCollection(data);
+          setGeoJsonData(normalized);
+          setCustomGeoJsonUrl(initialGeoJsonParam);
+        })
+        .catch((err) => {
+          console.warn('Erro ao carregar GeoJSON especificado na URL:', err);
+        });
+    }
+  }, [initialGeoJsonParam]);
 
   // Resumo da semana selecionada
   const currentWeekSummary = useMemo<WeeklyDataSummary>(() => {
@@ -224,7 +255,9 @@ export default function App() {
       const result = await fetchEpidemiologyFromGoogleSheets(cfg.url, cfg.sheetName, activeGeo);
       
       setEpidemiologyWeeks(result.weeks);
-      if (result.activeWeek && result.weeks[result.activeWeek]) {
+      if (initialWeek && result.weeks[initialWeek]) {
+        setSelectedWeek(initialWeek);
+      } else if (result.activeWeek && result.weeks[result.activeWeek]) {
         setSelectedWeek(result.activeWeek);
       } else {
         const first = Object.keys(result.weeks)[0];
@@ -244,7 +277,7 @@ export default function App() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [sheetsConfig, geoJsonData]);
+  }, [sheetsConfig, geoJsonData, initialWeek]);
 
   useEffect(() => {
     if (sheetsConfig.url) {
@@ -289,14 +322,28 @@ export default function App() {
     setError(null);
   };
 
-  const handleUpdateGeoJson = (newGeoJson: GeoJsonNeighborhoodCollection) => {
+  const handleUpdateGeoJson = (newGeoJson: GeoJsonNeighborhoodCollection, sourceUrl?: string) => {
     setGeoJsonData(newGeoJson);
+    const urlToSave = sourceUrl !== undefined ? sourceUrl : customGeoJsonUrl;
+    setCustomGeoJsonUrl(urlToSave);
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY_GEOJSON, JSON.stringify(newGeoJson));
+      if (urlToSave) {
+        localStorage.setItem(LOCAL_STORAGE_KEY_GEOJSON_URL, urlToSave);
+      } else {
+        localStorage.removeItem(LOCAL_STORAGE_KEY_GEOJSON_URL);
+      }
     } catch {}
     if (sheetsConfig.url) {
       syncGoogleSheets(sheetsConfig, newGeoJson);
     }
+  };
+
+  const handleResetGeoJson = () => {
+    setGeoJsonData(SAO_LUIS_BAIRROS_GEOJSON);
+    setCustomGeoJsonUrl('');
+    localStorage.removeItem(LOCAL_STORAGE_KEY_GEOJSON);
+    localStorage.removeItem(LOCAL_STORAGE_KEY_GEOJSON_URL);
   };
 
   const handleSelectDistrito = useCallback((dist: string) => {
@@ -328,48 +375,74 @@ export default function App() {
     }
   }, [filterDistrito]);
 
-  const handleResetGeoJson = () => {
-    setGeoJsonData(SAO_LUIS_BAIRROS_GEOJSON);
-    localStorage.removeItem(LOCAL_STORAGE_KEY_GEOJSON);
-  };
-
   return (
     <div className="flex flex-col w-screen h-screen overflow-hidden bg-slate-950 font-sans text-slate-100 select-none">
-      {/* Cabeçalho da Aplicação */}
-      <EpidemiologyHeader
-        summary={currentWeekSummary}
-        availableWeeks={availableWeeks}
-        selectedWeek={selectedWeek}
-        onSelectWeek={setSelectedWeek}
-        metric={metric}
-        onChangeMetric={setMetric}
-        viewLevel={viewLevel}
-        onChangeViewLevel={handleChangeViewLevel}
-        filterDistrito={filterDistrito}
-        onChangeDistrito={handleSelectDistrito}
-        distritosList={distritosList}
-        bairrosList={bairrosList}
-        onSearchBairro={(bId) => {
-          setSearchedBairroId(bId);
-          if (bId) setSelectedBairroId(bId);
-        }}
-        onOpenSheetsModal={() => setIsSheetsModalOpen(true)}
-        onOpenGeoJsonModal={() => setIsGeoJsonModalOpen(true)}
-        onOpenLookerModal={() => setIsLookerModalOpen(true)}
-        onRefreshData={() => syncGoogleSheets()}
-        isRefreshing={isRefreshing}
-        isEmbedMode={isEmbedMode}
-        onToggleEmbedMode={() => setIsEmbedMode(!isEmbedMode)}
-        lastUpdatedText={
-          sheetsConfig.lastFetchedAt 
-            ? new Date(sheetsConfig.lastFetchedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) 
-            : undefined
-        }
-        sourceType={sheetsConfig.sourceType}
-      />
+      {/* Cabeçalho da Aplicação: Apenas no modo normal (oculto no modo embed para mostrar somente o mapa) */}
+      {!isEmbedMode && (
+        <EpidemiologyHeader
+          summary={currentWeekSummary}
+          availableWeeks={availableWeeks}
+          selectedWeek={selectedWeek}
+          onSelectWeek={setSelectedWeek}
+          metric={metric}
+          onChangeMetric={setMetric}
+          viewLevel={viewLevel}
+          onChangeViewLevel={handleChangeViewLevel}
+          filterDistrito={filterDistrito}
+          onChangeDistrito={handleSelectDistrito}
+          distritosList={distritosList}
+          bairrosList={bairrosList}
+          onSearchBairro={(bId) => {
+            setSearchedBairroId(bId);
+            if (bId) setSelectedBairroId(bId);
+          }}
+          onOpenSheetsModal={() => setIsSheetsModalOpen(true)}
+          onOpenGeoJsonModal={() => setIsGeoJsonModalOpen(true)}
+          onOpenLookerModal={() => setIsLookerModalOpen(true)}
+          onRefreshData={() => syncGoogleSheets()}
+          isRefreshing={isRefreshing}
+          isEmbedMode={isEmbedMode}
+          onToggleEmbedMode={() => setIsEmbedMode(!isEmbedMode)}
+          lastUpdatedText={
+            sheetsConfig.lastFetchedAt 
+              ? new Date(sheetsConfig.lastFetchedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) 
+              : undefined
+          }
+          sourceType={sheetsConfig.sourceType}
+        />
+      )}
 
       {/* Área Central: Mapa Interativo & Painéis Flutuantes */}
       <main className="relative flex-1 w-full h-full overflow-hidden">
+        {/* Filtros Minimizados Flutuantes no Modo Embed (Looker Studio) */}
+        {isEmbedMode && (
+          <MinimizedEmbedFilters
+            summary={currentWeekSummary}
+            availableWeeks={availableWeeks}
+            selectedWeek={selectedWeek}
+            onSelectWeek={setSelectedWeek}
+            viewLevel={viewLevel}
+            onChangeViewLevel={handleChangeViewLevel}
+            filterDistrito={filterDistrito}
+            onChangeDistrito={handleSelectDistrito}
+            distritosList={distritosList}
+            bairrosList={bairrosList}
+            onSearchBairro={(bId) => {
+              setSearchedBairroId(bId);
+              if (bId) setSelectedBairroId(bId);
+            }}
+            onRefreshData={() => syncGoogleSheets()}
+            isRefreshing={isRefreshing}
+            onExitEmbedMode={() => setIsEmbedMode(false)}
+            lastUpdatedText={
+              sheetsConfig.lastFetchedAt 
+                ? new Date(sheetsConfig.lastFetchedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) 
+                : undefined
+            }
+            onOpenLookerModal={() => setIsLookerModalOpen(true)}
+          />
+        )}
+
         <DengueMap
           geoJsonData={geoJsonData}
           bairrosData={currentWeekSummary.bairros || {}}
@@ -386,7 +459,7 @@ export default function App() {
           filterDistrito={filterDistrito}
         />
 
-        {/* Dossiê do Bairro ou Distrito Selecionado (Destaque do Distrito no modo distrito) */}
+        {/* Dossiê do Bairro ou Distrito Selecionado */}
         {((viewLevel === 'distrito' && selectedDistrict) || (viewLevel === 'bairro' && selectedBairro)) && (
           <BairroDetailPanel
             bairro={viewLevel === 'distrito' ? null : selectedBairro}
@@ -396,6 +469,7 @@ export default function App() {
               setSelectedBairroId(null);
               setSelectedDistrictName(null);
             }}
+            isEmbedMode={isEmbedMode}
           />
         )}
 
@@ -418,8 +492,15 @@ export default function App() {
         isOpen={isLookerModalOpen}
         onClose={() => setIsLookerModalOpen(false)}
         currentSheetUrl={sheetsConfig.url}
+        selectedWeek={selectedWeek}
+        availableWeeks={availableWeeks}
+        filterDistrito={filterDistrito}
+        distritosList={distritosList}
+        viewLevel={viewLevel}
         defaultMetric={metric}
         defaultBasemap={basemap}
+        isCustomGeoJsonLoaded={geoJsonData !== SAO_LUIS_BAIRROS_GEOJSON || !!customGeoJsonUrl}
+        initialGeoJsonUrl={customGeoJsonUrl}
       />
 
       <GeoJsonUploadModal
@@ -428,6 +509,7 @@ export default function App() {
         currentGeoJson={geoJsonData}
         onUpdateGeoJson={handleUpdateGeoJson}
         onResetGeoJson={handleResetGeoJson}
+        currentGeoJsonUrl={customGeoJsonUrl}
       />
     </div>
   );

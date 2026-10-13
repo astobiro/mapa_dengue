@@ -161,3 +161,36 @@ export function createDissolvedDistrictsGeoJson(
 
   return sourceGeoJson;
 }
+
+/**
+ * Normaliza e padroniza campos de uma FeatureCollection GeoJSON de bairros.
+ */
+export function normalizeGeoJsonCollection(parsed: any): GeoJsonNeighborhoodCollection {
+  if (!parsed || parsed.type !== 'FeatureCollection' || !Array.isArray(parsed.features)) {
+    throw new Error('O arquivo não é um GeoJSON válido do tipo FeatureCollection.');
+  }
+  if (parsed.features.length === 0) {
+    throw new Error('O arquivo GeoJSON não contém feições (features vazias).');
+  }
+
+  parsed.features.forEach((feat: any, idx: number) => {
+    if (!feat.properties) feat.properties = {};
+    const p = feat.properties;
+    const detectedName = p.NM_BAIRRO || p.nm_bairro || p.bairro || p.Bairro || p.name || p.NOME || p.Name || `Polígono ${idx + 1}`;
+    const detectedPop = Number(p.POPULACAO || p.populacao || p.POP || p.pop || p.POP_ESTIMADA) || 25000;
+    const rawLayer = p.layer || p.Layer || p.LAYER || p.NM_DISTRIT || p.distrito || 'Distrito Centro';
+    const norm = normalizeKey(String(rawLayer));
+    const detectedLayer = (norm === 'sao luis' || norm === 'municipio de sao luis' || norm === 'ilha de sao luis') 
+      ? 'Distrito Centro' 
+      : rawLayer;
+
+    p.NM_BAIRRO = detectedName;
+    p.POPULACAO = detectedPop;
+    p.layer = detectedLayer;
+    p.distrito = detectedLayer;
+    if (!p.name) p.name = detectedName;
+    if (!p.id) p.id = p.CD_BAIRRO || p.id || `poly-${idx}`;
+  });
+
+  return parsed as GeoJsonNeighborhoodCollection;
+}

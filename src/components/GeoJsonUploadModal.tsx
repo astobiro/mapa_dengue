@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { GeoJsonNeighborhoodCollection } from '../types/dengue';
-import { SAO_LUIS_BAIRROS_GEOJSON } from '../data/saoLuisGeoJson';
+import { normalizeGeoJsonCollection } from '../utils/districtGeoJson';
 import { 
   AlertCircle, 
   CheckCircle2, 
   Download, 
   FileCode, 
+  Globe, 
   MapPin, 
   RotateCcw, 
   UploadCloud, 
@@ -16,8 +17,9 @@ interface GeoJsonUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentGeoJson: GeoJsonNeighborhoodCollection;
-  onUpdateGeoJson: (newGeoJson: GeoJsonNeighborhoodCollection) => void;
+  onUpdateGeoJson: (newGeoJson: GeoJsonNeighborhoodCollection, sourceUrl?: string) => void;
   onResetGeoJson: () => void;
+  currentGeoJsonUrl?: string;
 }
 
 export const GeoJsonUploadModal: React.FC<GeoJsonUploadModalProps> = ({
@@ -25,11 +27,13 @@ export const GeoJsonUploadModal: React.FC<GeoJsonUploadModalProps> = ({
   onClose,
   currentGeoJson,
   onUpdateGeoJson,
-  onResetGeoJson
+  onResetGeoJson,
+  currentGeoJsonUrl = ''
 }) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [urlInput, setUrlInput] = useState(currentGeoJsonUrl);
 
   if (!isOpen) return null;
 
@@ -46,32 +50,10 @@ export const GeoJsonUploadModal: React.FC<GeoJsonUploadModalProps> = ({
       try {
         const text = event.target?.result as string;
         const parsed = JSON.parse(text);
+        const normalized = normalizeGeoJsonCollection(parsed);
 
-        if (!parsed.type || parsed.type !== 'FeatureCollection' || !Array.isArray(parsed.features)) {
-          throw new Error('O arquivo não é um GeoJSON válido do tipo FeatureCollection.');
-        }
-
-        if (parsed.features.length === 0) {
-          throw new Error('O arquivo GeoJSON não contém feições (features vazias).');
-        }
-
-        // Padronizar propriedades caso venham de shapefile convertido pelo QGIS ou IBGE
-        parsed.features.forEach((feat: any, idx: number) => {
-          if (!feat.properties) feat.properties = {};
-          const p = feat.properties;
-          const detectedName = p.NM_BAIRRO || p.nm_bairro || p.bairro || p.Bairro || p.name || p.NOME || p.Name || `Polígono ${idx + 1}`;
-          const detectedPop = Number(p.POPULACAO || p.populacao || p.POP || p.pop || p.POP_ESTIMADA) || 25000;
-          const detectedLayer = p.layer || p.Layer || p.LAYER || p.NM_DISTRIT || p.distrito || 'São Luís';
-          p.NM_BAIRRO = detectedName;
-          p.POPULACAO = detectedPop;
-          p.layer = detectedLayer;
-          p.distrito = detectedLayer;
-          if (!p.name) p.name = detectedName;
-          if (!p.id) p.id = p.CD_BAIRRO || p.id || `poly-${idx}`;
-        });
-
-        onUpdateGeoJson(parsed);
-        setSuccess(`GeoJSON carregado com sucesso! ${parsed.features.length} bairros mapeados.`);
+        onUpdateGeoJson(normalized, '');
+        setSuccess(`GeoJSON carregado com sucesso! ${normalized.features.length} bairros mapeados.`);
       } catch (err: any) {
         setError(err.message || 'Erro ao processar arquivo GeoJSON.');
       } finally {
@@ -85,6 +67,34 @@ export const GeoJsonUploadModal: React.FC<GeoJsonUploadModalProps> = ({
     };
 
     reader.readAsText(file);
+  };
+
+  const handleLoadFromUrl = async () => {
+    if (!urlInput || !urlInput.trim()) {
+      setError('Informe a URL do arquivo GeoJSON.');
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setIsProcessing(true);
+
+    try {
+      const trimmed = urlInput.trim();
+      const response = await fetch(trimmed);
+      if (!response.ok) {
+        throw new Error(`Falha ao obter GeoJSON via URL (HTTP ${response.status}).`);
+      }
+      const data = await response.json();
+      const normalized = normalizeGeoJsonCollection(data);
+
+      onUpdateGeoJson(normalized, trimmed);
+      setSuccess(`GeoJSON carregado via URL com sucesso! ${normalized.features.length} bairros mapeados.`);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao carregar GeoJSON da URL informada.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDownloadGeoJson = () => {
@@ -120,7 +130,7 @@ export const GeoJsonUploadModal: React.FC<GeoJsonUploadModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           {error && (
             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
               <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -151,15 +161,45 @@ export const GeoJsonUploadModal: React.FC<GeoJsonUploadModalProps> = ({
             </p>
           </div>
 
-          {/* Upload de Novo GeoJSON */}
+          {/* Carregar via URL Web (Ideal para Looker Studio) */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-slate-300">
+              Carregar por Link / URL pública (.geojson):
+            </label>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Globe className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3 pointer-events-none" />
+                <input
+                  type="text"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder="Ex: https://raw.githubusercontent.com/.../bairros.geojson"
+                  className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder:text-slate-600 focus:outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleLoadFromUrl}
+                disabled={isProcessing || !urlInput.trim()}
+                className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-semibold text-xs transition active:scale-95 flex-shrink-0"
+              >
+                {isProcessing ? 'Carregando...' : 'Carregar'}
+              </button>
+            </div>
+            <span className="text-[10px] text-slate-500 block">
+              Arquivos GeoJSON hospedados online são carregados diretamente no Google Looker Studio.
+            </span>
+          </div>
+
+          {/* Upload de Arquivo Local */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-2">
-              Importar seu próprio Shapefile / GeoJSON (.geojson ou .json):
+              Ou faça upload de arquivo local (.geojson ou .json):
             </label>
-            <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-700 hover:border-rose-500/60 rounded-xl bg-slate-950/40 cursor-pointer transition group">
-              <UploadCloud className="w-8 h-8 text-slate-400 group-hover:text-rose-400 transition" />
+            <label className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-slate-700 hover:border-rose-500/60 rounded-xl bg-slate-950/40 cursor-pointer transition group">
+              <UploadCloud className="w-7 h-7 text-slate-400 group-hover:text-rose-400 transition" />
               <span className="text-xs font-medium text-slate-200 mt-2">
-                Clique para selecionar arquivo .geojson
+                Clique para selecionar arquivo local
               </span>
               <span className="text-[10px] text-slate-500 mt-0.5">
                 Suporta campos NM_BAIRRO, bairro, name ou CD_BAIRRO
@@ -172,14 +212,6 @@ export const GeoJsonUploadModal: React.FC<GeoJsonUploadModalProps> = ({
                 className="hidden"
               />
             </label>
-          </div>
-
-          {/* Dica para conversão de Shapefiles */}
-          <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <span className="font-semibold text-slate-300 block">Como converter Shapefile (.shp) para GeoJSON:</span>
-            <p>
-              Se você possui os arquivos do IBGE ou Prefeitura (.shp, .shx, .dbf), basta utilizar um conversor como <strong>Mapshaper</strong> ou <strong>QGIS</strong>, importar os arquivos e exportar como <strong>GeoJSON (WGS84)</strong>.
-            </p>
           </div>
 
           {/* Botões de Ação */}
@@ -197,6 +229,7 @@ export const GeoJsonUploadModal: React.FC<GeoJsonUploadModalProps> = ({
               type="button"
               onClick={() => {
                 onResetGeoJson();
+                setUrlInput('');
                 setSuccess('GeoJSON padrão de São Luís restaurado!');
               }}
               className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border border-slate-700 bg-slate-850 hover:bg-slate-800 text-slate-300 text-xs transition"

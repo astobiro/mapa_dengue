@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { BasemapTheme, ChoroplethMetric } from '../types/dengue';
+import { BasemapTheme, ChoroplethMetric, MapViewLevel } from '../types/dengue';
 import { 
   CheckCircle2, 
   Copy, 
   ExternalLink, 
   Layers, 
   LayoutDashboard, 
+  MapPin, 
   Monitor, 
   Sparkles, 
   X 
@@ -15,33 +16,61 @@ interface LookerStudioEmbedModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentSheetUrl?: string;
+  selectedWeek: string;
+  availableWeeks: string[];
+  filterDistrito: string;
+  distritosList: string[];
+  viewLevel: MapViewLevel;
   defaultMetric: ChoroplethMetric;
   defaultBasemap: BasemapTheme;
+  isCustomGeoJsonLoaded?: boolean;
+  initialGeoJsonUrl?: string;
 }
 
 export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
   isOpen,
   onClose,
   currentSheetUrl,
+  selectedWeek,
+  availableWeeks,
+  filterDistrito,
+  distritosList,
+  viewLevel,
   defaultMetric,
-  defaultBasemap
+  defaultBasemap,
+  isCustomGeoJsonLoaded = false,
+  initialGeoJsonUrl = ''
 }) => {
   const [copied, setCopied] = useState(false);
   const [embedMode, setEmbedMode] = useState(true);
+  const [week, setWeek] = useState<string>(selectedWeek);
   const [metric, setMetric] = useState<ChoroplethMetric>(defaultMetric);
   const [theme, setTheme] = useState<BasemapTheme>(defaultBasemap);
+  const [view, setView] = useState<MapViewLevel>(viewLevel);
+  const [distrito, setDistrito] = useState<string>(filterDistrito || 'all');
   const [refreshInterval, setRefreshInterval] = useState(300);
+  const [sheetUrl, setSheetUrl] = useState<string>(currentSheetUrl || '');
+  const [geoJsonUrl, setGeoJsonUrl] = useState<string>(initialGeoJsonUrl || '');
 
   if (!isOpen) return null;
 
   // Gerar a URL completa com parâmetros de consulta para incorporação
   const baseUrl = window.location.origin + window.location.pathname;
   const params = new URLSearchParams();
+  
   if (embedMode) params.set('embed', 'true');
+  if (sheetUrl && sheetUrl.trim()) params.set('sheet', sheetUrl.trim());
+  if (week) params.set('week', week);
+  if (view && view !== 'bairro') params.set('view', view);
+  if (distrito && distrito !== 'all') params.set('distrito', distrito);
+  if (theme && theme !== 'osm') params.set('theme', theme);
   params.set('metric', metric);
-  params.set('theme', theme);
-  if (refreshInterval > 0) params.set('refresh', String(refreshInterval));
-  if (currentSheetUrl) params.set('sheet', currentSheetUrl);
+  if (refreshInterval > 0 && refreshInterval !== 300) {
+    params.set('refresh', String(refreshInterval));
+  }
+  if (geoJsonUrl && geoJsonUrl.trim()) {
+    params.set('geojson', geoJsonUrl.trim());
+  }
 
   const generatedEmbedUrl = `${baseUrl}?${params.toString()}`;
 
@@ -53,7 +82,7 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-slate-700/80 shadow-2xl text-slate-100 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
+      <div className="w-full max-w-2xl rounded-2xl bg-slate-900 border border-slate-700/80 shadow-2xl text-slate-100 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
         {/* Cabeçalho */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/40">
           <div className="flex items-center gap-2.5">
@@ -62,7 +91,7 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-white">Incorporação no Google Looker Studio</h2>
-              <p className="text-xs text-slate-400">Elemento de URL integrada com carregamento dinâmico</p>
+              <p className="text-xs text-slate-400">Mapa direto em tela cheia com filtros minimizados</p>
             </div>
           </div>
           <button
@@ -73,75 +102,167 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           {/* Instruções Looker Studio */}
           <div className="p-3.5 rounded-xl bg-blue-950/30 border border-blue-500/30 text-xs text-blue-200 space-y-2">
             <div className="flex items-center gap-2 font-semibold text-blue-300">
               <Sparkles className="w-4 h-4 text-blue-400 flex-shrink-0" />
-              <span>Como adicionar ao seu painel do Google Data Studio:</span>
+              <span>Como incorporar no Looker Studio (Google Data Studio):</span>
             </div>
             <ol className="list-decimal list-inside space-y-1 text-slate-300 text-[11px] leading-relaxed">
-              <li>No Looker Studio (Google Data Studio), clique em <strong>Inserir &gt; Incorporação por URL</strong>.</li>
-              <li>Desenhe o quadro onde deseja que o mapa apareça no relatório.</li>
-              <li>No painel direito <strong>Propriedades de incorporação de URL</strong>, cole a URL gerada abaixo.</li>
-              <li>Pronto! O mapa carregará dinamicamente os dados da sua planilha sem precisar recarregar o Data Studio.</li>
+              <li>No Looker Studio, vá em <strong>Inserir &gt; Incorporação por URL</strong>.</li>
+              <li>Desenhe o quadro onde deseja que o mapa seja exibido.</li>
+              <li>No painel direito <strong>Propriedades de incorporação de URL</strong>, cole o link abaixo.</li>
+              <li>O mapa será exibido <strong>sem o cabeçalho superior</strong>, ocupando 100% da área do quadro com os <strong>filtros minimizados</strong> acessíveis.</li>
             </ol>
           </div>
 
-          {/* Opções da URL */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div>
-              <label className="block text-slate-400 font-medium mb-1">Métrica Inicial no Painel</label>
-              <select
-                value={metric}
-                onChange={(e) => setMetric(e.target.value as ChoroplethMetric)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs"
-              >
-                <option value="casos">Número de Casos Prováveis</option>
-              </select>
+          {/* Configurações dos Casos e Filtros */}
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Configurações do Mapa e dos Casos Prováveis
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              {/* Semana Epidemiológica */}
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Semana Epidemiológica</label>
+                <select
+                  value={week}
+                  onChange={(e) => setWeek(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs"
+                >
+                  {availableWeeks.map(w => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Nível de Visualização */}
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Visualização Inicial</label>
+                <select
+                  value={view}
+                  onChange={(e) => setView(e.target.value as MapViewLevel)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs"
+                >
+                  <option value="bairro">Visão por Bairros (Padrão)</option>
+                  <option value="distrito">Visão por Distrito Sanitário</option>
+                </select>
+              </div>
+
+              {/* Filtro de Distrito */}
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Filtro de Distrito Sanitário</label>
+                <select
+                  value={distrito}
+                  onChange={(e) => setDistrito(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs"
+                >
+                  <option value="all">Todos os Distritos</option>
+                  {distritosList.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Tema do Mapa Base */}
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Tema do Mapa Base</label>
+                <select
+                  value={theme}
+                  onChange={(e) => setTheme(e.target.value as BasemapTheme)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs"
+                >
+                  <option value="osm">OpenStreetMap</option>
+                  <option value="satellite">Satélite Híbrido</option>
+                </select>
+              </div>
+
+              {/* Métrica */}
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Métrica Epidemiológica</label>
+                <input
+                  type="text"
+                  readOnly
+                  value="Número de Casos Prováveis"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950/60 border border-slate-800 text-rose-300 font-semibold text-xs cursor-not-allowed"
+                />
+              </div>
+
+              {/* Atualização Automática */}
+              <div>
+                <label className="block text-slate-400 font-medium mb-1">Atualização Automática</label>
+                <select
+                  value={refreshInterval}
+                  onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs"
+                >
+                  <option value={300}>A cada 5 minutos (Recomendado)</option>
+                  <option value={60}>A cada 1 minuto</option>
+                  <option value={900}>A cada 15 minutos</option>
+                  <option value={0}>Apenas ao carregar</option>
+                </select>
+              </div>
             </div>
 
+            {/* URL da Planilha Google */}
             <div>
-              <label className="block text-slate-400 font-medium mb-1">Tema do Mapa Base</label>
-              <select
-                value={theme}
-                onChange={(e) => setTheme(e.target.value as BasemapTheme)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs"
-              >
-                <option value="osm">OpenStreetMap</option>
-                <option value="satellite">Satélite Híbrido</option>
-              </select>
+              <label className="block text-slate-400 font-medium mb-1 text-xs">
+                Link da Planilha do Google (Dados dos Casos)
+              </label>
+              <input
+                type="text"
+                value={sheetUrl}
+                onChange={(e) => setSheetUrl(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/... (opcional)"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono placeholder:text-slate-600 focus:outline-none"
+              />
+              <span className="text-[10px] text-slate-500 mt-1 block">
+                Se preenchido, os casos prováveis serão lidos automaticamente desta planilha no Looker Studio.
+              </span>
             </div>
 
+            {/* URL do GeoJSON Personalizado */}
             <div>
-              <label className="block text-slate-400 font-medium mb-1">Atualização Automática no Iframe</label>
-              <select
-                value={refreshInterval}
-                onChange={(e) => setRefreshInterval(Number(e.target.value))}
-                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs"
-              >
-                <option value={60}>A cada 1 minuto</option>
-                <option value={300}>A cada 5 minutos (Padrão)</option>
-                <option value={900}>A cada 15 minutos</option>
-                <option value={0}>Apenas quando abrir a página</option>
-              </select>
+              <label className="block text-slate-400 font-medium mb-1 text-xs flex items-center justify-between">
+                <span>URL do GeoJSON Personalizado dos Bairros (Opcional)</span>
+                {isCustomGeoJsonLoaded && (
+                  <span className="text-[10px] text-emerald-400 font-semibold">
+                    ✓ GeoJSON personalizado ativo nesta sessão
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={geoJsonUrl}
+                onChange={(e) => setGeoJsonUrl(e.target.value)}
+                placeholder="Ex: https://raw.githubusercontent.com/.../bairros.geojson ou ./sao_luis_bairros.geojson"
+                className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono placeholder:text-slate-600 focus:outline-none"
+              />
+              <span className="text-[10px] text-slate-500 mt-1 block">
+                Ao indicar um link público de GeoJSON (ex: GitHub raw, gist ou arquivo na pasta public), o Looker Studio carregará esses bairros mapeados automaticamente.
+              </span>
             </div>
 
-            <div className="flex items-center pt-5">
-              <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+            {/* Checkbox Modo Embed */}
+            <div className="pt-1">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-300 text-xs">
                 <input
                   type="checkbox"
                   checked={embedMode}
                   onChange={(e) => setEmbedMode(e.target.checked)}
                   className="rounded text-rose-600 focus:ring-rose-500 bg-slate-950 border-slate-700"
                 />
-                <span>Modo Embed (Interface compacta sem barras extras)</span>
+                <span className="font-medium">
+                  Modo Somente Mapa (Oculta o cabeçalho e mantém os filtros minimizados flutuantes)
+                </span>
               </label>
             </div>
           </div>
 
           {/* Caixa com a URL Gerada */}
-          <div>
+          <div className="pt-2 border-t border-slate-800">
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
               URL Gerada para Colar no Looker Studio:
             </label>
@@ -150,7 +271,7 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
                 type="text"
                 readOnly
                 value={generatedEmbedUrl}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 font-mono text-[11px] text-sky-300 focus:outline-none"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 font-mono text-[11px] text-sky-300 focus:outline-none select-all"
               />
               <button
                 type="button"
@@ -172,10 +293,17 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
             </div>
           </div>
 
-          {/* Dica para Hospedagem */}
-          <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400">
-            <span className="font-semibold text-slate-300 block mb-0.5">Hospedagem da Aplicação:</span>
-            Ao publicar a sua aplicação (ex: no GitHub Pages ou em seu servidor próprio), basta copiar o endereço web da sua página e colar no Looker Studio da mesma forma! O código é 100% estático e compatível.
+          {/* Ações Rápidas */}
+          <div className="flex items-center justify-between text-xs pt-1">
+            <a
+              href={generatedEmbedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 hover:underline"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Testar pré-visualização em nova aba</span>
+            </a>
           </div>
         </div>
 
