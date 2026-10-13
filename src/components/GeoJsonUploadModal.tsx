@@ -178,7 +178,7 @@ export const GeoJsonUploadModal: React.FC<GeoJsonUploadModalProps> = ({
           <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800 text-[11px] text-slate-400 space-y-1">
             <span className="font-semibold text-slate-300 block">Como converter Shapefile (.shp) para GeoJSON:</span>
             <p>
-              Se você possui os arquivos do IBGE ou Prefeitura (.shp, .shx, .dbf), basta abrir a ferramenta gratuita <strong>mapshaper.org</strong> ou <strong>QGIS</strong>, importar os arquivos e exportar como <strong>GeoJSON (WGS84)</strong>.
+              Se você possui os arquivos do IBGE ou Prefeitura (.shp, .shx, .dbf), basta utilizar um conversor como <strong>Mapshaper</strong> ou <strong>QGIS</strong>, importar os arquivos e exportar como <strong>GeoJSON (WGS84)</strong>.
             </p>
           </div>
 

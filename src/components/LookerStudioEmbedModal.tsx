@@ -172,10 +172,10 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
             </div>
           </div>
 
-          {/* Dica para GitHub Pages */}
+          {/* Dica para Hospedagem */}
           <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400">
-            <span className="font-semibold text-slate-300 block mb-0.5">Hospedagem no GitHub Pages:</span>
-            Quando você fizer o deploy no GitHub Pages (ex: <code className="text-sky-300">https://seu-usuario.github.io/dengue-slz/</code>), basta copiar o endereço do seu GitHub Pages e colar no Looker Studio da mesma forma! O código é 100% estático e compatível.
+            <span className="font-semibold text-slate-300 block mb-0.5">Hospedagem da Aplicação:</span>
+            Ao publicar a sua aplicação (ex: no GitHub Pages ou em seu servidor próprio), basta copiar o endereço web da sua página e colar no Looker Studio da mesma forma! O código é 100% estático e compatível.
           </div>
         </div>
 

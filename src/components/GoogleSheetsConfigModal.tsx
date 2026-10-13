@@ -138,7 +138,7 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
                 </label>
                 <input
                   type="text"
-                  placeholder="https://docs.google.com/spreadsheets/d/.../edit ou /pub?output=csv"
+                  placeholder="Cole aqui o link da planilha (/edit ou /pub?output=csv)"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-xs text-white placeholder:text-slate-500 transition"
