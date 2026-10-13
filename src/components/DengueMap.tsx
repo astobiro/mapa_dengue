@@ -65,6 +65,8 @@ export const DengueMap: React.FC<DengueMapProps> = ({
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null);
   const initialFitDoneRef = useRef(false);
+  // Guardar posição e zoom anteriores ao clique no bairro para restaurar ao fechar a janela
+  const previousViewStateRef = useRef<{ center: L.LatLng; zoom: number } | null>(null);
   const [showLayerMenu, setShowLayerMenu] = useState(false);
   const [isLegendCollapsed, setIsLegendCollapsed] = useState<boolean>(Boolean(isEmbedMode));
 
@@ -418,34 +420,55 @@ export const DengueMap: React.FC<DengueMapProps> = ({
     }
   }, [selectedDistrictName, filterDistrito, viewLevel]);
 
-  // Foco com zoom quando um bairro é pesquisado ou selecionado (no modo bairro)
+  // Foco com zoom quando um bairro é pesquisado ou selecionado, e restauração ao fechar janela
   useEffect(() => {
     if (viewLevel === 'distrito') return;
     const targetId = highlightSearchBairroId || selectedBairroId;
-    if (!targetId || !geoJsonLayerRef.current || !mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+    if (!map) return;
 
-    geoJsonLayerRef.current.eachLayer((layer: any) => {
-      const feat = layer.feature;
-      if (!feat) return;
-      const p = feat.properties;
-      const matches = 
-        p.id === targetId ||
-        normalizeKey(p.id || '') === normalizeKey(targetId) ||
-        normalizeKey(p.NM_BAIRRO || p.name || '') === normalizeKey(targetId);
-
-      if (matches) {
-        try {
-          const bounds = layer.getBounds();
-          if (bounds.isValid()) {
-            mapInstanceRef.current?.flyToBounds(bounds, {
-              padding: [40, 40],
-              maxZoom: 14,
-              duration: 1.2
-            });
-          }
-        } catch {}
+    if (targetId) {
+      // Se estamos prestes a dar zoom no bairro e ainda não salvamos o estado prévio, salvar agora
+      if (!previousViewStateRef.current) {
+        previousViewStateRef.current = {
+          center: map.getCenter(),
+          zoom: map.getZoom()
+        };
       }
-    });
+
+      if (!geoJsonLayerRef.current) return;
+      geoJsonLayerRef.current.eachLayer((layer: any) => {
+        const feat = layer.feature;
+        if (!feat) return;
+        const p = feat.properties;
+        const matches = 
+          p.id === targetId ||
+          normalizeKey(p.id || '') === normalizeKey(targetId) ||
+          normalizeKey(p.NM_BAIRRO || p.name || '') === normalizeKey(targetId);
+
+        if (matches) {
+          try {
+            const bounds = layer.getBounds();
+            if (bounds.isValid()) {
+              mapInstanceRef.current?.flyToBounds(bounds, {
+                padding: [40, 40],
+                maxZoom: 14,
+                duration: 1.2
+              });
+            }
+          } catch {}
+        }
+      });
+    } else {
+      // Quando fechar a janela (targetId é null), retornar exatamente ao zoom e centro de antes de clicar no bairro
+      if (previousViewStateRef.current) {
+        const { center, zoom } = previousViewStateRef.current;
+        previousViewStateRef.current = null;
+        map.flyTo(center, zoom, {
+          duration: 1.0
+        });
+      }
+    }
   }, [highlightSearchBairroId, selectedBairroId, viewLevel]);
 
   const handleResetBounds = () => {

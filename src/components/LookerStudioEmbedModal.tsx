@@ -44,6 +44,7 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [embedMode, setEmbedMode] = useState(true);
   const [week, setWeek] = useState<string>(selectedWeek);
+  const [includeWeek, setIncludeWeek] = useState<boolean>(false);
   const [metric, setMetric] = useState<ChoroplethMetric>(defaultMetric);
   const [theme, setTheme] = useState<BasemapTheme>(defaultBasemap);
   const [view, setView] = useState<MapViewLevel>(viewLevel);
@@ -60,7 +61,7 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
   
   if (embedMode) params.set('embed', 'true');
   if (sheetUrl && sheetUrl.trim()) params.set('sheet', sheetUrl.trim());
-  if (week) params.set('week', week);
+  if (includeWeek && week) params.set('week', week);
   if (view && view !== 'bairro') params.set('view', view);
   if (distrito && distrito !== 'all') params.set('distrito', distrito);
   if (theme && theme !== 'osm') params.set('theme', theme);
@@ -126,16 +127,37 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               {/* Semana Epidemiológica */}
               <div>
-                <label className="block text-slate-400 font-medium mb-1">Semana Epidemiológica</label>
-                <select
-                  value={week}
-                  onChange={(e) => setWeek(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs"
-                >
-                  {availableWeeks.map(w => (
-                    <option key={w} value={w}>{w}</option>
-                  ))}
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-slate-400 font-medium text-xs">Semana Epidemiológica</label>
+                  <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeWeek}
+                      onChange={(e) => setIncludeWeek(e.target.checked)}
+                      className="rounded text-blue-500 focus:ring-blue-400 bg-slate-950 border-slate-700"
+                    />
+                    <span>Fixar semana na URL</span>
+                  </label>
+                </div>
+                {includeWeek ? (
+                  <select
+                    value={week}
+                    onChange={(e) => setWeek(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs"
+                  >
+                    {availableWeeks.map(w => (
+                      <option key={w} value={w}>{w}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800 text-emerald-400 text-xs flex items-center justify-between">
+                    <span>Sem seleção fixa (Sempre a mais recente)</span>
+                    <span className="text-[10px] text-slate-400">Dinâmica</span>
+                  </div>
+                )}
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  {includeWeek ? 'A URL abrirá sempre travada nesta semana selecionada.' : 'Sem o parâmetro ?week=, o Looker Studio sempre exibirá a semana epidemiológica mais atualizada.'}
+                </span>
               </div>
 
               {/* Nível de Visualização */}

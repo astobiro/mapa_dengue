@@ -107,8 +107,9 @@ export default function App() {
   const [isLookerModalOpen, setIsLookerModalOpen] = useState(false);
   const [isGeoJsonModalOpen, setIsGeoJsonModalOpen] = useState(false);
 
-  // Carregar GeoJSON via parâmetro URL caso fornecido
+  // Carregar GeoJSON da pasta local/GitHub (ou parâmetro URL caso fornecido)
   useEffect(() => {
+    // 1. Se especificado explicitamente na URL, dar prioridade
     if (initialGeoJsonParam) {
       fetch(initialGeoJsonParam)
         .then((res) => {
@@ -123,7 +124,38 @@ export default function App() {
         .catch((err) => {
           console.warn('Erro ao carregar GeoJSON especificado na URL:', err);
         });
+      return;
     }
+
+    // 2. Se o usuário já tiver um GeoJSON salvo no localStorage, respeitar a escolha do usuário
+    const hasSavedLocal = localStorage.getItem(LOCAL_STORAGE_KEY_GEOJSON);
+    if (hasSavedLocal) return;
+
+    // 3. Tentar carregar automaticamente do repositório /geojson/sao_luis_bairros.geojson
+    const defaultPaths = [
+      './geojson/sao_luis_bairros.geojson',
+      '/geojson/sao_luis_bairros.geojson',
+      './sao_luis_bairros.geojson'
+    ];
+
+    const tryFetchDefault = async () => {
+      for (const p of defaultPaths) {
+        try {
+          const res = await fetch(p);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.features && data.features.length > 0) {
+              const normalized = normalizeGeoJsonCollection(data);
+              setGeoJsonData(normalized);
+              setCustomGeoJsonUrl(p);
+              break;
+            }
+          }
+        } catch {}
+      }
+    };
+
+    tryFetchDefault();
   }, [initialGeoJsonParam]);
 
   // Resumo da semana selecionada
