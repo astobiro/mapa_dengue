@@ -103,7 +103,7 @@ export const GeoJsonUploadModal: React.FC<GeoJsonUploadModalProps> = ({
     )}`;
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', jsonString);
-    downloadAnchor.setAttribute('download', 'sao_luis_bairros_dengue.geojson');
+    downloadAnchor.setAttribute('download', 'bairros_limpos_dengue.geojson');
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();

@@ -259,7 +259,7 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
                 type="text"
                 value={geoJsonUrl}
                 onChange={(e) => setGeoJsonUrl(e.target.value)}
-                placeholder="Ex: https://raw.githubusercontent.com/.../bairros.geojson ou ./sao_luis_bairros.geojson"
+                placeholder="Ex: https://raw.githubusercontent.com/.../bairros.geojson ou ./geojson/bairros_limpos.geojson"
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono placeholder:text-slate-600 focus:outline-none"
               />
               <span className="text-[10px] text-slate-500 mt-1 block">

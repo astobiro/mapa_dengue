@@ -131,15 +131,12 @@ export default function App() {
     const hasSavedLocal = localStorage.getItem(LOCAL_STORAGE_KEY_GEOJSON);
     if (hasSavedLocal) return;
 
-    // 3. Tentar carregar automaticamente do repositório /geojson/bairros_limpos.geojson ou sao_luis_bairros.geojson
+    // 3. Tentar carregar automaticamente do repositório /geojson/bairros_limpos.geojson
     const defaultPaths = [
       './geojson/bairros_limpos.geojson',
       '/geojson/bairros_limpos.geojson',
       './bairros_limpos.geojson',
-      '/bairros_limpos.geojson',
-      './geojson/sao_luis_bairros.geojson',
-      '/geojson/sao_luis_bairros.geojson',
-      './sao_luis_bairros.geojson'
+      '/bairros_limpos.geojson'
     ];
 
     const tryFetchDefault = async () => {
