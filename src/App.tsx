@@ -40,6 +40,8 @@ export default function App() {
     (typeof window !== 'undefined' && window.self !== window.top);
 
   const initialSheetUrl = queryParams.get('sheet') || queryParams.get('url') || '';
+  const initialColBairro = queryParams.get('col_bairro') || queryParams.get('bairro_col') || '';
+  const initialColCasos = queryParams.get('col_casos') || queryParams.get('casos_col') || '';
   
   // Métrica padrão: Número de Casos Prováveis ('casos')
   const initialMetric = (queryParams.get('metric') as ChoroplethMetric) || 'casos';
@@ -58,12 +60,16 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (initialSheetUrl) parsed.url = initialSheetUrl;
+        if (initialColBairro) parsed.bairroColumn = initialColBairro;
+        if (initialColCasos) parsed.casosColumn = initialColCasos;
         return parsed;
       }
     } catch {}
 
     return {
       url: initialSheetUrl,
+      bairroColumn: initialColBairro || undefined,
+      casosColumn: initialColCasos || undefined,
       autoRefreshIntervalSeconds: initialRefresh,
       sourceType: initialSheetUrl ? 'google_sheets' : 'local_demo',
       lastFetchedAt: new Date().toISOString()
@@ -285,7 +291,15 @@ export default function App() {
 
     try {
       const activeGeo = currentGeo || geoJsonData;
-      const result = await fetchEpidemiologyFromGoogleSheets(cfg.url, cfg.sheetName, activeGeo);
+      const result = await fetchEpidemiologyFromGoogleSheets(
+        cfg.url, 
+        cfg.sheetName, 
+        activeGeo,
+        {
+          bairroColumn: cfg.bairroColumn,
+          casosColumn: cfg.casosColumn
+        }
+      );
       
       setEpidemiologyWeeks(result.weeks);
       if (initialWeek && result.weeks[initialWeek]) {
@@ -526,6 +540,8 @@ export default function App() {
         isOpen={isLookerModalOpen}
         onClose={() => setIsLookerModalOpen(false)}
         currentSheetUrl={sheetsConfig.url}
+        initialBairroColumn={sheetsConfig.bairroColumn}
+        initialCasosColumn={sheetsConfig.casosColumn}
         selectedWeek={selectedWeek}
         availableWeeks={availableWeeks}
         filterDistrito={filterDistrito}

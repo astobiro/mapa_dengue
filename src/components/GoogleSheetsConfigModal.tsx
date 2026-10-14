@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { SheetsConfig } from '../types/dengue';
-import { generateGoogleSheetsCsvTemplate } from '../services/sheetsService';
+import { 
+  generateGoogleSheetsCsvTemplate,
+  fetchSheetColumns,
+  normalizeKey
+} from '../services/sheetsService';
 import { 
   CheckCircle2, 
   Copy, 
@@ -12,7 +16,9 @@ import {
   RefreshCw, 
   Sparkles, 
   X, 
-  AlertCircle 
+  AlertCircle,
+  Columns,
+  Layers
 } from 'lucide-react';
 
 interface GoogleSheetsConfigModalProps {
@@ -36,21 +42,86 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
 }) => {
   const [url, setUrl] = useState(config.url || '');
   const [sheetName, setSheetName] = useState(config.sheetName || '');
+  const [bairroColumn, setBairroColumn] = useState(config.bairroColumn || '');
+  const [casosColumn, setCasosColumn] = useState(config.casosColumn || '');
   const [refreshInterval, setRefreshInterval] = useState(config.autoRefreshIntervalSeconds);
   const [copiedTemplate, setCopiedTemplate] = useState(false);
   const [activeTab, setActiveTab] = useState<'config' | 'guide'>('config');
 
+  const [availableColumns, setAvailableColumns] = useState<string[]>([]);
+  const [isLoadingColumns, setIsLoadingColumns] = useState(false);
+  const [columnsMessage, setColumnsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   if (!isOpen) return null;
+
+  const handleLoadColumns = async () => {
+    if (!url.trim()) {
+      setColumnsMessage({
+        type: 'error',
+        text: 'Insira o link da planilha antes de carregar as colunas.'
+      });
+      return;
+    }
+
+    setIsLoadingColumns(true);
+    setColumnsMessage(null);
+
+    try {
+      const cols = await fetchSheetColumns(url.trim(), sheetName.trim() || undefined);
+      setAvailableColumns(cols);
+
+      // Auto-preenchimento inteligente se os campos estiverem em branco
+      if (!bairroColumn.trim()) {
+        const foundBairro = cols.find(c => {
+          const norm = normalizeKey(c);
+          return norm === 'nmbairro' || norm === 'bairro' || norm === 'nomedobairro' || norm === 'nome';
+        });
+        if (foundBairro) setBairroColumn(foundBairro);
+      }
+
+      if (!casosColumn.trim()) {
+        const foundCasos = cols.find(c => {
+          const norm = normalizeKey(c);
+          return norm === 'ncasos' || norm === 'numerodecasos' || norm === 'casos' || norm === 'totalcasos' || norm === 'casosprovaveis';
+        });
+        if (foundCasos) setCasosColumn(foundCasos);
+      }
+
+      setColumnsMessage({
+        type: 'success',
+        text: `${cols.length} coluna(s) carregada(s) com sucesso da página selecionada!`
+      });
+    } catch (err: any) {
+      setColumnsMessage({
+        type: 'error',
+        text: err.message || 'Erro ao ler colunas da planilha.'
+      });
+    } finally {
+      setIsLoadingColumns(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     await onSaveConfig({
       url: url.trim(),
       sheetName: sheetName.trim() || undefined,
+      bairroColumn: bairroColumn.trim() || undefined,
+      casosColumn: casosColumn.trim() || undefined,
       autoRefreshIntervalSeconds: Number(refreshInterval),
       sourceType: url.trim() ? 'google_sheets' : 'local_demo',
       lastFetchedAt: new Date().toISOString()
     });
+  };
+
+  const handleReset = () => {
+    setUrl('');
+    setSheetName('');
+    setBairroColumn('');
+    setCasosColumn('');
+    setAvailableColumns([]);
+    setColumnsMessage(null);
+    onResetToDemo();
   };
 
   const handleDownloadTemplate = () => {
@@ -180,6 +251,183 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
                 </div>
               </div>
 
+              {/* Mapeamento de Colunas (Texto ou Carregamento da Planilha) */}
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Columns className="w-3.5 h-3.5 text-rose-400" />
+                      Mapeamento das Colunas da Planilha
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Informe os nomes das colunas ou carregue automaticamente da página selecionada
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleLoadColumns}
+                    disabled={isLoadingColumns || !url.trim()}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-xs text-rose-300 border border-slate-700/80 hover:border-rose-500/50 disabled:opacity-50 transition cursor-pointer"
+                  >
+                    {isLoadingColumns ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Carregando colunas...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Carregar Colunas da Página</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {columnsMessage && (
+                  <div
+                    className={`p-2.5 rounded-lg text-[11px] flex items-center gap-2 border ${
+                      columnsMessage.type === 'success'
+                        ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                        : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                    }`}
+                  >
+                    {columnsMessage.type === 'success' ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400" />
+                    ) : (
+                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />
+                    )}
+                    <span>{columnsMessage.text}</span>
+                  </div>
+                )}
+
+                {availableColumns.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
+                      Colunas detectadas ({availableColumns.length}):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-slate-900/80 rounded-lg border border-slate-800">
+                      {availableColumns.map((col) => (
+                        <span
+                          key={col}
+                          className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 border border-slate-700 text-slate-200"
+                        >
+                          {col}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* Coluna do Nome do Bairro */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-slate-300">
+                        Coluna do Nome do Bairro
+                      </label>
+                      {bairroColumn && (
+                        <button
+                          type="button"
+                          onClick={() => setBairroColumn('')}
+                          className="text-[10px] text-slate-400 hover:text-rose-400"
+                        >
+                          Limpar (automático)
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        list="bairro-columns-list"
+                        placeholder="Padrão: NM_BAIRRO"
+                        value={bairroColumn}
+                        onChange={(e) => setBairroColumn(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-xs text-white placeholder:text-slate-500 transition font-mono"
+                      />
+                      <datalist id="bairro-columns-list">
+                        {availableColumns.map((c) => (
+                          <option key={c} value={c} />
+                        ))}
+                      </datalist>
+                    </div>
+
+                    {availableColumns.length > 0 && (
+                      <div className="mt-1.5">
+                        <select
+                          value={bairroColumn}
+                          onChange={(e) => setBairroColumn(e.target.value)}
+                          className="w-full text-[11px] px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 focus:border-rose-500 focus:outline-none"
+                        >
+                          <option value="">-- Selecione das colunas da página --</option>
+                          {availableColumns.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Ex: <code className="text-slate-400">NM_BAIRRO</code>, <code className="text-slate-400">Bairro</code> ou <code className="text-slate-400">Nome</code>
+                    </p>
+                  </div>
+
+                  {/* Coluna de Número de Casos */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-slate-300">
+                        Coluna de Casos (Prováveis)
+                      </label>
+                      {casosColumn && (
+                        <button
+                          type="button"
+                          onClick={() => setCasosColumn('')}
+                          className="text-[10px] text-slate-400 hover:text-rose-400"
+                        >
+                          Limpar (automático)
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        list="casos-columns-list"
+                        placeholder="Padrão: N_CASOS"
+                        value={casosColumn}
+                        onChange={(e) => setCasosColumn(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-xs text-white placeholder:text-slate-500 transition font-mono"
+                      />
+                      <datalist id="casos-columns-list">
+                        {availableColumns.map((c) => (
+                          <option key={c} value={c} />
+                        ))}
+                      </datalist>
+                    </div>
+
+                    {availableColumns.length > 0 && (
+                      <div className="mt-1.5">
+                        <select
+                          value={casosColumn}
+                          onChange={(e) => setCasosColumn(e.target.value)}
+                          className="w-full text-[11px] px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 focus:border-rose-500 focus:outline-none"
+                        >
+                          <option value="">-- Selecione das colunas da página --</option>
+                          {availableColumns.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Ex: <code className="text-slate-400">N_CASOS</code>, <code className="text-slate-400">Casos</code> ou <code className="text-slate-400">Total</code>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* Status Atual */}
               <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs space-y-1">
                 <div className="flex items-center justify-between text-slate-400">
@@ -188,6 +436,14 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
                     {config.sourceType === 'google_sheets' ? 'Planilha Ativa' : 'Dados Modelo São Luís (Demonstração)'}
                   </span>
                 </div>
+                {(config.bairroColumn || config.casosColumn) && (
+                  <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                    <span>Colunas Configuradas:</span>
+                    <span className="text-rose-400 font-mono">
+                      Bairro: {config.bairroColumn || 'Auto'} | Casos: {config.casosColumn || 'Auto'}
+                    </span>
+                  </div>
+                )}
                 {config.lastFetchedAt && (
                   <div className="flex items-center justify-between text-slate-400">
                     <span>Última Sincronização:</span>
@@ -203,7 +459,7 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 disabled:opacity-50 text-white font-semibold text-xs shadow-lg shadow-rose-950/50 transition"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 disabled:opacity-50 text-white font-semibold text-xs shadow-lg shadow-rose-950/50 transition cursor-pointer"
                 >
                   {isLoading ? (
                     <>
@@ -220,9 +476,9 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
 
                 <button
                   type="button"
-                  onClick={onResetToDemo}
+                  onClick={handleReset}
                   disabled={isLoading}
-                  className="py-2.5 px-3.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+                  className="py-2.5 px-3.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer"
                 >
                   Restaurar Demonstração
                 </button>
@@ -236,15 +492,15 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
                     1
                   </span>
                   <div>
-                    <h4 className="font-semibold text-white">Estrutura das Colunas na Planilha</h4>
+                    <h4 className="font-semibold text-white">Estrutura e Nomes das Colunas</h4>
                     <p className="text-slate-400 mt-0.5 text-[11px]">
-                      Sua planilha do Google só precisa conter as 2 colunas abaixo:
+                      Sua planilha do Google precisa apenas de colunas identificando o bairro e a quantidade de casos:
                     </p>
                     <div className="mt-2 p-2 rounded-lg bg-slate-950 font-mono text-[11px] text-emerald-400 overflow-x-auto">
                       NM_BAIRRO | N_CASOS
                     </div>
                     <p className="text-slate-400 mt-1.5 text-[10px]">
-                      A coluna <strong>N_CASOS</strong> representa o <strong>Número de Casos Prováveis</strong> notificados para cada bairro.
+                      💡 <strong>Colunas flexíveis:</strong> Se suas colunas tiverem outros nomes (ex: <em>Bairro</em>, <em>Casos Confirmados</em>, <em>Total</em>), você pode digitá-las ou clicar em <strong>"Carregar Colunas da Página"</strong> na aba de configuração para selecioná-las diretamente!
                     </p>
                   </div>
                 </div>

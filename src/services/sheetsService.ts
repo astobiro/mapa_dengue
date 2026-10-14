@@ -161,10 +161,63 @@ function extractPopulationMap(geoJson?: GeoJsonNeighborhoodCollection): Map<stri
   return map;
 }
 
+/**
+ * Conecta à planilha do Google / CSV e carrega a lista de nomes das colunas da página selecionada
+ */
+export async function fetchSheetColumns(
+  rawUrl: string,
+  sheetName?: string
+): Promise<string[]> {
+  if (!rawUrl || !rawUrl.trim()) {
+    throw new Error('Por favor, insira o link do Google Planilhas primeiro.');
+  }
+
+  const csvUrl = convertGoogleSheetsUrlToCsvUrl(rawUrl, sheetName);
+
+  const response = await fetch(csvUrl, {
+    headers: {
+      'Accept': 'text/csv,text/plain,*/*'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Falha ao conectar à planilha (HTTP ${response.status}: ${response.statusText}). Verifique se a planilha está com acesso público ("Qualquer pessoa com o link" ou "Publicar na Web") e se o nome da aba está correto.`
+    );
+  }
+
+  const csvText = await response.text();
+  if (!csvText || !csvText.trim()) {
+    throw new Error('A planilha retornou vazia.');
+  }
+
+  const parsed = Papa.parse<Record<string, any>>(csvText, {
+    header: true,
+    preview: 3,
+    skipEmptyLines: true,
+    transformHeader: (header: string) => header.trim()
+  });
+
+  let fields: string[] = [];
+  if (parsed.meta && Array.isArray(parsed.meta.fields) && parsed.meta.fields.length > 0) {
+    fields = parsed.meta.fields;
+  } else if (parsed.data && parsed.data.length > 0) {
+    fields = Object.keys(parsed.data[0]);
+  }
+
+  const cleaned = fields.filter(f => typeof f === 'string' && f.trim() !== '');
+  if (cleaned.length === 0) {
+    throw new Error('Não foi possível identificar o cabeçalho das colunas nesta página da planilha.');
+  }
+
+  return cleaned;
+}
+
 export async function fetchEpidemiologyFromGoogleSheets(
   rawUrl: string,
   sheetName?: string,
-  geoJson?: GeoJsonNeighborhoodCollection
+  geoJson?: GeoJsonNeighborhoodCollection,
+  customColumns?: { bairroColumn?: string; casosColumn?: string }
 ): Promise<{
   weeks: Record<string, WeeklyDataSummary>;
   activeWeek: string;
@@ -184,12 +237,13 @@ export async function fetchEpidemiologyFromGoogleSheets(
 
   const csvText = await response.text();
 
-  return parseEpidemiologyCsv(csvText, geoJson);
+  return parseEpidemiologyCsv(csvText, geoJson, customColumns);
 }
 
 export function parseEpidemiologyCsv(
   csvText: string,
-  geoJson?: GeoJsonNeighborhoodCollection
+  geoJson?: GeoJsonNeighborhoodCollection,
+  customColumns?: { bairroColumn?: string; casosColumn?: string }
 ): {
   weeks: Record<string, WeeklyDataSummary>;
   activeWeek: string;
@@ -198,7 +252,7 @@ export function parseEpidemiologyCsv(
   const parsed = Papa.parse<Record<string, any>>(csvText, {
     header: true,
     skipEmptyLines: true,
-    transformHeader: (header: string) => header.trim().toLowerCase()
+    transformHeader: (header: string) => header.trim()
   });
 
   if (!parsed.data || parsed.data.length === 0) {
@@ -219,8 +273,20 @@ export function parseEpidemiologyCsv(
     });
   };
 
-  const colBairro = findKey(['nm_bairro', 'nmbairro', 'bairro', 'nome_do_bairro', 'nome']) || keys[0] || 'nm_bairro';
-  const colCasos = findKey(['n_casos', 'ncasos', 'numero_de_casos', 'casos', 'casos_provaveis', 'total_casos']) || keys[1] || 'n_casos';
+  const customColBairro = customColumns?.bairroColumn?.trim();
+  const customColCasos = customColumns?.casosColumn?.trim();
+
+  // Seleção por coluna informada pelo usuário ou detecção automática
+  const colBairro = (customColBairro && keys.find(k => k === customColBairro || normalizeKey(k) === normalizeKey(customColBairro)))
+    || findKey(['nm_bairro', 'nmbairro', 'bairro', 'nome_do_bairro', 'nome']) 
+    || keys[0] 
+    || 'NM_BAIRRO';
+
+  const colCasos = (customColCasos && keys.find(k => k === customColCasos || normalizeKey(k) === normalizeKey(customColCasos)))
+    || findKey(['n_casos', 'ncasos', 'numero_de_casos', 'casos', 'casos_provaveis', 'total_casos']) 
+    || keys[1] 
+    || 'N_CASOS';
+
   const colSemana = findKey(['semana', 'semana_epidemiologica', 'se', 'periodo']);
 
   let validRowCount = 0;

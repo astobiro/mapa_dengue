@@ -37,6 +37,8 @@ export interface WeeklyDataSummary {
 export interface SheetsConfig {
   url: string;
   sheetName?: string;
+  bairroColumn?: string; // Nome da coluna do Bairro (ex: 'NM_BAIRRO' ou personalizado)
+  casosColumn?: string;  // Nome da coluna de Número de Casos (ex: 'N_CASOS' ou personalizado)
   autoRefreshIntervalSeconds: number; // 0 = desativado, 60 = 1min, 300 = 5min, etc.
   lastFetchedAt?: string;
   sourceType: 'google_sheets' | 'csv_url' | 'local_demo' | 'custom_upload';

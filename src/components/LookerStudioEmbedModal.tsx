@@ -16,6 +16,8 @@ interface LookerStudioEmbedModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentSheetUrl?: string;
+  initialBairroColumn?: string;
+  initialCasosColumn?: string;
   selectedWeek: string;
   availableWeeks: string[];
   filterDistrito: string;
@@ -31,6 +33,8 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
   isOpen,
   onClose,
   currentSheetUrl,
+  initialBairroColumn = '',
+  initialCasosColumn = '',
   selectedWeek,
   availableWeeks,
   filterDistrito,
@@ -51,6 +55,8 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
   const [distrito, setDistrito] = useState<string>(filterDistrito || 'all');
   const [refreshInterval, setRefreshInterval] = useState(300);
   const [sheetUrl, setSheetUrl] = useState<string>(currentSheetUrl || '');
+  const [bairroCol, setBairroCol] = useState<string>(initialBairroColumn || '');
+  const [casosCol, setCasosCol] = useState<string>(initialCasosColumn || '');
   const [geoJsonUrl, setGeoJsonUrl] = useState<string>(initialGeoJsonUrl || '');
 
   if (!isOpen) return null;
@@ -61,6 +67,8 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
   
   if (embedMode) params.set('embed', 'true');
   if (sheetUrl && sheetUrl.trim()) params.set('sheet', sheetUrl.trim());
+  if (bairroCol && bairroCol.trim()) params.set('col_bairro', bairroCol.trim());
+  if (casosCol && casosCol.trim()) params.set('col_casos', casosCol.trim());
   if (includeWeek && week) params.set('week', week);
   if (view && view !== 'bairro') params.set('view', view);
   if (distrito && distrito !== 'all') params.set('distrito', distrito);
@@ -243,6 +251,35 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
               <span className="text-[10px] text-slate-500 mt-1 block">
                 Se preenchido, os casos prováveis serão lidos automaticamente desta planilha no Looker Studio.
               </span>
+            </div>
+
+            {/* Colunas Personalizadas da Planilha */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-400 font-medium mb-1 text-xs">
+                  Coluna de Bairro (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={bairroCol}
+                  onChange={(e) => setBairroCol(e.target.value)}
+                  placeholder="Ex: NM_BAIRRO ou Bairro"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono placeholder:text-slate-600 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-medium mb-1 text-xs">
+                  Coluna de Casos (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={casosCol}
+                  onChange={(e) => setCasosCol(e.target.value)}
+                  placeholder="Ex: N_CASOS ou Casos"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs font-mono placeholder:text-slate-600 focus:outline-none"
+                />
+              </div>
             </div>
 
             {/* URL do GeoJSON Personalizado */}
