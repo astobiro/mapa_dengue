@@ -161,6 +161,7 @@ export const DengueMap: React.FC<DengueMapProps> = ({
   // Guardar posição e zoom anteriores ao clique no bairro para restaurar ao fechar a janela
   const previousViewStateRef = useRef<{ center: L.LatLng; zoom: number } | null>(null);
   const prevTargetDistrictRef = useRef<string | null>(null);
+  const prevTargetBairroRef = useRef<string | null>(null);
   const [showLayerMenu, setShowLayerMenu] = useState(false);
   const [isLegendCollapsed, setIsLegendCollapsed] = useState<boolean>(Boolean(isEmbedMode));
 
@@ -458,6 +459,11 @@ export const DengueMap: React.FC<DengueMapProps> = ({
   useEffect(() => {
     const targetDistrict = (filterDistrito && filterDistrito !== 'all') ? filterDistrito : selectedDistrictName;
     const prevDistrict = prevTargetDistrictRef.current;
+
+    // Se o distrito selecionado não sofreu alteração, não sobrepor a visão/zoom atual do usuário
+    if (targetDistrict === prevDistrict) {
+      return;
+    }
     prevTargetDistrictRef.current = targetDistrict || null;
 
     if (!targetDistrict) {
@@ -528,12 +534,20 @@ export const DengueMap: React.FC<DengueMapProps> = ({
   // Foco com zoom quando um bairro é pesquisado ou selecionado, e restauração ao fechar janela
   useEffect(() => {
     if (viewLevel === 'distrito') return;
-    const targetId = highlightSearchBairroId || selectedBairroId;
+    const targetId = highlightSearchBairroId || selectedBairroId || null;
+    const prevTargetId = prevTargetBairroRef.current;
+
+    // Se o bairro selecionado não mudou, não reiniciar nem voar novamente
+    if (targetId === prevTargetId) {
+      return;
+    }
+    prevTargetBairroRef.current = targetId;
+
     const map = mapInstanceRef.current;
     if (!map) return;
 
     if (targetId) {
-      // Se estamos prestes a dar zoom no bairro e ainda não salvamos o estado prévio, salvar agora
+      // Salvar estado prévio antes de focar no bairro selecionado
       if (!previousViewStateRef.current) {
         const c = map.getCenter();
         const z = map.getZoom();
@@ -568,8 +582,8 @@ export const DengueMap: React.FC<DengueMapProps> = ({
           } catch {}
         }
       });
-    } else {
-      // Quando fechar a janela (targetId é null), retornar exatamente ao zoom e centro de antes de clicar no bairro
+    } else if (prevTargetId) {
+      // Quando fechar a janela do bairro (targetId é null após ter um selecionado), retornar à visão anterior
       if (previousViewStateRef.current) {
         const { center, zoom } = previousViewStateRef.current;
         previousViewStateRef.current = null;
@@ -577,8 +591,6 @@ export const DengueMap: React.FC<DengueMapProps> = ({
           safeFlyTo(map, center, zoom, {
             duration: 1.0
           });
-        } else {
-          handleResetBounds();
         }
       }
     }

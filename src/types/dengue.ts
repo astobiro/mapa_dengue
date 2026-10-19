@@ -44,6 +44,32 @@ export interface SheetsConfig {
   sourceType: 'google_sheets' | 'csv_url' | 'local_demo' | 'custom_upload';
 }
 
+export interface MapConfigFile {
+  url?: string;
+  sheetName?: string;
+  bairroColumn?: string;
+  casosColumn?: string;
+  colunaBairro?: string;
+  colunaCasos?: string;
+  autoRefreshIntervalSeconds?: number;
+  googleSheets?: {
+    url?: string;
+    sheetName?: string;
+    bairroColumn?: string;
+    casosColumn?: string;
+    colunaBairro?: string;
+    colunaCasos?: string;
+    autoRefreshIntervalSeconds?: number;
+  };
+  mapa?: {
+    geojsonUrl?: string;
+    visualizacaoPadrao?: 'bairro' | 'distrito';
+    metricaPadrao?: 'casos' | 'incidencia';
+    temaPadrao?: 'osm' | 'satellite';
+  };
+  geojsonUrl?: string;
+}
+
 export type ChoroplethMetric = 'casos' | 'incidencia';
 
 export type BasemapTheme = 'osm' | 'satellite';

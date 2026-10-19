@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SheetsConfig } from '../types/dengue';
 import { 
   generateGoogleSheetsCsvTemplate,
@@ -51,6 +51,17 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
   const [availableColumns, setAvailableColumns] = useState<string[]>([]);
   const [isLoadingColumns, setIsLoadingColumns] = useState(false);
   const [columnsMessage, setColumnsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setUrl(config.url || '');
+      setSheetName(config.sheetName || '');
+      setBairroColumn(config.bairroColumn || '');
+      setCasosColumn(config.casosColumn || '');
+      setRefreshInterval(config.autoRefreshIntervalSeconds ?? 300);
+      setColumnsMessage(null);
+    }
+  }, [isOpen, config]);
 
   if (!isOpen) return null;
 
@@ -215,7 +226,7 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-xs text-white placeholder:text-slate-500 transition"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Certifique-se de que a planilha está marcada como pública ("Qualquer pessoa com o link pode ver" ou "Publicar na Web").
+                  Certifique-se de que a planilha está marcada como pública ("Qualquer pessoa com o link pode ver" ou "Publicar na Web"). Você também pode definir o link, aba e colunas padrão editando o arquivo <code className="text-rose-300 font-mono">config.json</code> no repositório.
                 </p>
               </div>
 

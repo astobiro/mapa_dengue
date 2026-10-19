@@ -104,12 +104,20 @@ export function convertGoogleSheetsUrlToCsvUrl(url: string, sheetName?: string):
   const trimmed = url.trim();
 
   if (trimmed.endsWith('.csv') || trimmed.includes('output=csv') || trimmed.includes('format=csv')) {
-    const separator = trimmed.includes('?') ? '&' : '?';
-    return `${trimmed}${separator}_cacheBuster=${Date.now()}`;
+    let finalUrl = trimmed;
+    if (sheetName && !trimmed.includes('sheet=') && !trimmed.includes('gid=')) {
+      const sep = finalUrl.includes('?') ? '&' : '?';
+      finalUrl = `${finalUrl}${sep}sheet=${encodeURIComponent(sheetName)}`;
+    }
+    const separator = finalUrl.includes('?') ? '&' : '?';
+    return `${finalUrl}${separator}_cacheBuster=${Date.now()}`;
   }
 
   if (trimmed.includes('/pubhtml')) {
-    const csvUrl = trimmed.replace('/pubhtml', '/pub?output=csv');
+    let csvUrl = trimmed.replace('/pubhtml', '/pub?output=csv');
+    if (sheetName && !trimmed.includes('sheet=')) {
+      csvUrl = `${csvUrl}&sheet=${encodeURIComponent(sheetName)}`;
+    }
     return `${csvUrl}&_cacheBuster=${Date.now()}`;
   }
 
@@ -278,7 +286,7 @@ export function parseEpidemiologyCsv(
 
   // Seleção por coluna informada pelo usuário ou detecção automática
   const colBairro = (customColBairro && keys.find(k => k === customColBairro || normalizeKey(k) === normalizeKey(customColBairro)))
-    || findKey(['nm_bairro', 'nmbairro', 'bairro', 'nome_do_bairro', 'nome']) 
+    || findKey(['nm_bairro_prox', 'nmbairroprox', 'nm_bairro_corrigido', 'nmbairrocorrigido', 'nm_bairro', 'nmbairro', 'bairro', 'nome_do_bairro', 'nome']) 
     || keys[0] 
     || 'NM_BAIRRO';
 
@@ -304,15 +312,23 @@ export function parseEpidemiologyCsv(
 
     const casos = parseBrazilianNumber(row[colCasos]);
 
-    const geoInfo = popMap.get(id);
+    let geoInfo = popMap.get(id);
+    if (!geoInfo && bairroNomeInput.includes('/')) {
+      const parts = bairroNomeInput.split('/');
+      for (const part of parts) {
+        const pNorm = normalizeKey(part.trim());
+        if (pNorm && popMap.get(pNorm)) {
+          geoInfo = popMap.get(pNorm);
+          break;
+        }
+      }
+    }
+
     const finalId = geoInfo?.featId || id;
     const populacao = geoInfo?.populacao ?? 25000;
-    const rawDistSanitario = geoInfo?.distrito ?? 'Distrito Centro';
-    const distritoSanitario = normalizeKey(rawDistSanitario) === 'sao luis' ? 'Distrito Centro' : rawDistSanitario;
+    const rawDistSanitario = geoInfo?.distrito ?? 'DISTRITO 1 - CENTRO';
+    const distritoSanitario = normalizeKey(rawDistSanitario) === 'sao luis' ? 'DISTRITO 1 - CENTRO' : rawDistSanitario;
     const bairroNome = geoInfo?.officialName ?? bairroNomeInput;
-
-    const incidencia = populacao > 0 ? Math.round(((casos / populacao) * 100000) * 10) / 10 : 0;
-    const nivelRisco = calculateRiskLevel(incidencia);
 
     if (!weeks[semana]) {
       weeks[semana] = {
@@ -327,29 +343,48 @@ export function parseEpidemiologyCsv(
       };
     }
 
+    const currentWeekObj = weeks[semana];
+    const existing = currentWeekObj.bairros[finalId];
+    const totalCasosBairro = (existing ? existing.casos : 0) + casos;
+    const incidencia = populacao > 0 ? Math.round(((totalCasosBairro / populacao) * 100000) * 10) / 10 : 0;
+    const nivelRisco = calculateRiskLevel(incidencia);
+
     const item: BairroEpidemiology = {
       id: finalId,
       bairroNome,
       distritoSanitario,
       populacao,
-      casos,
+      casos: totalCasosBairro,
       incidencia,
       nivelRisco,
       dataAtualizacao: new Date().toLocaleDateString('pt-BR')
     };
 
-    weeks[semana].bairros[finalId] = item;
-    weeks[semana].bairros[id] = item;
-    weeks[semana].totalCasos += casos;
-    weeks[semana].totalPopulacao += populacao;
-    weeks[semana].bairrosTotal += 1;
-    if (nivelRisco === 'alto' || nivelRisco === 'muito_alto') {
-      weeks[semana].bairrosEmRiscoAlto += 1;
+    if (!existing) {
+      currentWeekObj.totalPopulacao += populacao;
+      currentWeekObj.bairrosTotal += 1;
     }
+    currentWeekObj.totalCasos += casos;
+
+    currentWeekObj.bairros[finalId] = item;
+    currentWeekObj.bairros[id] = item;
   });
 
+  // Atualizar métricas globais e contagem de risco alto
   Object.keys(weeks).forEach(sem => {
     const w = weeks[sem];
+    const seenUniqueBairros = new Set<string>();
+    let highRiskCount = 0;
+    Object.values(w.bairros).forEach(b => {
+      if (!seenUniqueBairros.has(b.id)) {
+        seenUniqueBairros.add(b.id);
+        if (b.nivelRisco === 'alto' || b.nivelRisco === 'muito_alto') {
+          highRiskCount++;
+        }
+      }
+    });
+    w.bairrosEmRiscoAlto = highRiskCount;
+    w.bairrosTotal = seenUniqueBairros.size;
     if (w.totalPopulacao > 0) {
       w.incidenciaMedia = Math.round(((w.totalCasos / w.totalPopulacao) * 100000) * 10) / 10;
     }

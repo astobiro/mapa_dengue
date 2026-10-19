@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SAO_LUIS_BAIRROS_GEOJSON } from './data/saoLuisGeoJson';
 import { INITIAL_EPIDEMIOLOGY_DATA } from './data/mockEpidemiologyData';
 import { 
@@ -8,6 +8,7 @@ import {
   DistrictEpidemiology, 
   GeoJsonNeighborhoodCollection, 
   MapViewLevel, 
+  MapConfigFile,
   SheetsConfig, 
   WeeklyDataSummary 
 } from './types/dengue';
@@ -98,6 +99,7 @@ export default function App() {
   const [metric, setMetric] = useState<ChoroplethMetric>(initialMetric);
   const [basemap, setBasemap] = useState<BasemapTheme>(initialTheme);
   const [viewLevel, setViewLevel] = useState<MapViewLevel>(initialViewLevel); // 'bairro' ou 'distrito'
+  const userInteractedWithViewRef = useRef(false);
   const [filterDistrito, setFilterDistrito] = useState<string>(initialDistrito);
   const [selectedBairroId, setSelectedBairroId] = useState<string | null>(null);
   const [selectedDistrictName, setSelectedDistrictName] = useState<string | null>(null);
@@ -281,16 +283,27 @@ export default function App() {
     return districtsData[selectedDistrictName] || null;
   }, [selectedDistrictName, districtsData]);
 
-  // Função para carregar e sincronizar a planilha do Google
-  const syncGoogleSheets = useCallback(async (targetConfig?: SheetsConfig, currentGeo?: GeoJsonNeighborhoodCollection) => {
-    const cfg = targetConfig || sheetsConfig;
-    if (!cfg.url || cfg.url.trim() === '') return;
+  const sheetsConfigRef = useRef(sheetsConfig);
+  sheetsConfigRef.current = sheetsConfig;
 
+  const geoJsonDataRef = useRef(geoJsonData);
+  geoJsonDataRef.current = geoJsonData;
+
+  const isSyncingRef = useRef(false);
+  const configLoadedRef = useRef(false);
+
+  // Função para carregar e sincronizar a planilha do Google (com referência estável)
+  const syncGoogleSheets = useCallback(async (targetConfig?: SheetsConfig, currentGeo?: GeoJsonNeighborhoodCollection) => {
+    const cfg = targetConfig || sheetsConfigRef.current;
+    if (!cfg.url || cfg.url.trim() === '') return;
+    if (isSyncingRef.current) return;
+
+    isSyncingRef.current = true;
     setIsRefreshing(true);
     setError(null);
 
     try {
-      const activeGeo = currentGeo || geoJsonData;
+      const activeGeo = currentGeo || geoJsonDataRef.current;
       const result = await fetchEpidemiologyFromGoogleSheets(
         cfg.url, 
         cfg.sheetName, 
@@ -302,14 +315,20 @@ export default function App() {
       );
       
       setEpidemiologyWeeks(result.weeks);
-      if (initialWeek && result.weeks[initialWeek]) {
-        setSelectedWeek(initialWeek);
-      } else if (result.activeWeek && result.weeks[result.activeWeek]) {
-        setSelectedWeek(result.activeWeek);
-      } else {
-        const first = Object.keys(result.weeks)[0];
-        if (first) setSelectedWeek(first);
-      }
+
+      // Preserva rigorosamente a semana selecionada pelo usuário
+      setSelectedWeek((prevWeek) => {
+        if (prevWeek && result.weeks[prevWeek]) {
+          return prevWeek;
+        }
+        if (initialWeek && result.weeks[initialWeek]) {
+          return initialWeek;
+        }
+        if (result.activeWeek && result.weeks[result.activeWeek]) {
+          return result.activeWeek;
+        }
+        return Object.keys(result.weeks)[0] || prevWeek;
+      });
 
       const updatedConfig: SheetsConfig = {
         ...cfg,
@@ -323,19 +342,115 @@ export default function App() {
       setError(err.message || 'Erro ao sincronizar com Google Planilhas.');
     } finally {
       setIsRefreshing(false);
+      isSyncingRef.current = false;
     }
-  }, [sheetsConfig, geoJsonData, initialWeek]);
+  }, [initialWeek]);
 
+  // Carregar arquivo de configuração externa config.json (executa ESTRITAMENTE UMA VEZ na inicialização)
   useEffect(() => {
-    if (sheetsConfig.url) {
+    if (configLoadedRef.current) return;
+    configLoadedRef.current = true;
+
+    const loadConfigFile = async () => {
+      try {
+        const pathsToTry = ['./config.json', '/config.json', 'config.json'];
+        let configData: MapConfigFile | null = null;
+        for (const p of pathsToTry) {
+          try {
+            const res = await fetch(p);
+            if (res.ok) {
+              const data = await res.json();
+              if (data && typeof data === 'object') {
+                configData = data;
+                break;
+              }
+            }
+          } catch {}
+        }
+
+        if (!configData) return;
+
+        const sheetsCfg = configData.googleSheets || {};
+        const mapaCfg = configData.mapa || {};
+
+        const sheetUrl = (sheetsCfg.url || configData.url || '').trim();
+        const sheetTab = (sheetsCfg.sheetName || configData.sheetName || '').trim();
+        const colB = (sheetsCfg.bairroColumn || sheetsCfg.colunaBairro || configData.bairroColumn || configData.colunaBairro || '').trim();
+        const colC = (sheetsCfg.casosColumn || sheetsCfg.colunaCasos || configData.casosColumn || configData.colunaCasos || '').trim();
+        const refreshSec = Number(sheetsCfg.autoRefreshIntervalSeconds || configData.autoRefreshIntervalSeconds) || 300;
+
+        // Se houver URL da planilha definida no config.json e não sobrescrita por parâmetro de URL
+        if (sheetUrl && !initialSheetUrl) {
+          const newConfig: SheetsConfig = {
+            url: sheetUrl,
+            sheetName: sheetTab || undefined,
+            bairroColumn: colB || 'NM_BAIRRO',
+            casosColumn: colC || 'N_CASOS',
+            autoRefreshIntervalSeconds: refreshSec,
+            sourceType: 'google_sheets',
+            lastFetchedAt: new Date().toISOString()
+          };
+
+          setSheetsConfig(newConfig);
+          // Sincroniza uma única vez na inicialização
+          syncGoogleSheets(newConfig);
+        } else if (!initialSheetUrl && (colB || colC || sheetTab)) {
+          // Atualiza colunas e aba padrão caso não tenham sido definidas
+          setSheetsConfig((prev) => ({
+            ...prev,
+            sheetName: prev.sheetName || (sheetTab || undefined),
+            bairroColumn: prev.bairroColumn || (colB || undefined),
+            casosColumn: prev.casosColumn || (colC || undefined),
+            autoRefreshIntervalSeconds: prev.autoRefreshIntervalSeconds || refreshSec
+          }));
+        }
+
+        // Se houver GeoJSON configurado no JSON e não na URL
+        const customGeo = (mapaCfg.geojsonUrl || configData.geojsonUrl || '').trim();
+        if (customGeo && !initialGeoJsonParam) {
+          try {
+            const geoRes = await fetch(customGeo);
+            if (geoRes.ok) {
+              const geoData = await geoRes.json();
+              if (geoData && geoData.features && geoData.features.length > 0) {
+                setGeoJsonData(normalizeGeoJsonCollection(geoData));
+                setCustomGeoJsonUrl(customGeo);
+              }
+            }
+          } catch {}
+        }
+
+        // Configurações visuais iniciais do mapa SOMENTE na montagem inicial se o usuário ainda não tiver interagido
+        if (mapaCfg.visualizacaoPadrao && !queryParams.get('view') && !userInteractedWithViewRef.current) {
+          setViewLevel(mapaCfg.visualizacaoPadrao);
+        }
+        if (mapaCfg.metricaPadrao && !queryParams.get('metric')) {
+          setMetric(mapaCfg.metricaPadrao);
+        }
+        if (mapaCfg.temaPadrao && !queryParams.get('theme')) {
+          setBasemap(mapaCfg.temaPadrao);
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar config.json:', err);
+      }
+    };
+
+    loadConfigFile();
+  }, [initialSheetUrl, initialGeoJsonParam, syncGoogleSheets]);
+
+  // Sincronização inicial para planilhas fornecidas via parâmetro de URL
+  useEffect(() => {
+    if (initialSheetUrl && initialSheetUrl.trim()) {
       syncGoogleSheets();
     }
-  }, []);
+  }, [initialSheetUrl, syncGoogleSheets]);
 
+  // Atualização periódica configurada (polling) - executa estritamente no intervalo programado
   useEffect(() => {
-    if (!sheetsConfig.url || sheetsConfig.autoRefreshIntervalSeconds <= 0) return;
+    const intervalSec = sheetsConfig.autoRefreshIntervalSeconds;
+    if (!sheetsConfig.url || !intervalSec || intervalSec <= 0) return;
 
-    const intervalMs = sheetsConfig.autoRefreshIntervalSeconds * 1000;
+    const intervalMs = intervalSec * 1000;
     const timer = setInterval(() => {
       syncGoogleSheets();
     }, intervalMs);
@@ -413,6 +528,7 @@ export default function App() {
   }, [currentWeekSummary.bairros]);
 
   const handleChangeViewLevel = useCallback((level: MapViewLevel) => {
+    userInteractedWithViewRef.current = true;
     setViewLevel(level);
     if (level === 'distrito') {
       setSelectedBairroId(null);
@@ -511,7 +627,14 @@ export default function App() {
         {((viewLevel === 'distrito' && selectedDistrict) || (viewLevel === 'bairro' && selectedBairro)) && (
           <BairroDetailPanel
             bairro={viewLevel === 'distrito' ? null : selectedBairro}
-            districtInfo={selectedDistrict || (selectedBairro ? districtsData[selectedBairro.distritoSanitario] : null)}
+            districtInfo={
+              selectedDistrict || 
+              (selectedBairro 
+                ? (districtsData[selectedBairro.distritoSanitario] || 
+                   Object.entries(districtsData).find(([k]) => normalizeKey(k) === normalizeKey(selectedBairro.distritoSanitario))?.[1] || 
+                   null) 
+                : null)
+            }
             viewLevel={viewLevel}
             onClose={() => {
               setSelectedBairroId(null);

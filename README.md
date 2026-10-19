@@ -20,8 +20,10 @@ O sistema foi desenvolvido para facilitar a análise epidemiológica territorial
 ## 📁 Estrutura do Repositório
 
 ```text
+├── config.json             # Configuração da planilha Google, aba e colunas padrão
 ├── geojson/                # Malhas geográficas versionadas (bairros_limpos.geojson)
 ├── public/                 # Arquivos públicos e estáticos para o GitHub Pages
+│   ├── config.json         # Cópia estática de configuração servida no GitHub Pages
 │   └── geojson/            # Cópia estática servida em produção
 ├── src/                    # Código-fonte da aplicação React + TypeScript + Tailwind
 │   ├── components/         # Mapa, painéis, modais e cabeçalhos
@@ -31,3 +33,62 @@ O sistema foi desenvolvido para facilitar a análise epidemiológica territorial
 ```
 
 ---
+
+## ⚙️ Configuração Automática do Mapa (`config.json`)
+
+Você pode pré-configurar a planilha do Google e os nomes das colunas editando o arquivo `config.json`:
+
+```json
+{
+  "googleSheets": {
+    "url": "https://docs.google.com/spreadsheets/d/SEU_ID_AQUI/edit?usp=sharing",
+    "sheetName": "Dados",
+    "bairroColumn": "NM_BAIRRO",
+    "casosColumn": "N_CASOS",
+    "autoRefreshIntervalSeconds": 300
+  },
+  "mapa": {
+    "geojsonUrl": "./geojson/bairros_limpos.geojson",
+    "visualizacaoPadrao": "bairro",
+    "metricaPadrao": "casos",
+    "temaPadrao": "osm"
+  }
+}
+```
+
+- **`url`**: Link público da sua planilha do Google (com permissão de leitor ou publicada na web).
+- **`sheetName`**: Nome da aba/página que contém os dados da semana.
+- **`bairroColumn`**: Nome da coluna que contém os nomes dos bairros (ex: `NM_BAIRRO`, `Bairro`).
+- **`casosColumn`**: Nome da coluna com o número de casos prováveis (ex: `N_CASOS`, `Casos`).
+- **`autoRefreshIntervalSeconds`**: Tempo em segundos para atualizar automaticamente (ex: `300` para 5 minutos).
+
+---
+
+## 🚀 Como Rodar Localmente
+
+```bash
+# 1. Instalar as dependências
+npm install
+
+# 2. Iniciar o servidor de desenvolvimento
+npm run dev
+
+# 3. Compilar para produção
+npm run build
+```
+
+---
+
+## 🌐 Publicação no GitHub Pages
+
+O projeto já inclui o fluxo de deploy automatizado (`.github/workflows/deploy.yml`):
+
+1. Envie o código para a branch `main` do seu repositório no GitHub:
+   ```bash
+   git add .
+   git commit -m "Atualizações do projeto"
+   git push origin main
+   ```
+2. No GitHub, acesse a aba **Settings** > **Pages**.
+3. Em **Build and deployment** > **Source**, selecione **GitHub Actions**.
+4. O site será compilado e publicado automaticamente na URL do seu GitHub Pages.
