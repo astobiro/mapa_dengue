@@ -232,10 +232,29 @@ export const EpidemiologyHeader: React.FC<EpidemiologyHeaderProps> = ({
             </div>
           )}
 
-          {/* Métrica Fixa: Número de Casos Prováveis */}
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-xl px-2.5 py-1 text-xs">
-            <span className="text-[11px] text-slate-400 hidden sm:inline">Métrica:</span>
-            <span className="text-rose-300 font-bold text-xs">Número de Casos Prováveis</span>
+          {/* Controle de Métrica: Casos Prováveis vs Incidência */}
+          <div className="flex items-center rounded-xl bg-slate-900 border border-slate-700/80 p-0.5 text-xs">
+            <span className="text-[10px] text-slate-400 font-semibold px-2 hidden lg:inline">Métrica:</span>
+            <button
+              type="button"
+              onClick={() => onChangeMetric('casos')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+                metric === 'casos' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Exibir Número de Casos Prováveis"
+            >
+              Casos
+            </button>
+            <button
+              type="button"
+              onClick={() => onChangeMetric('incidencia')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+                metric === 'incidencia' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Exibir Taxa de Incidência por 100 mil habitantes"
+            >
+              Incidência
+            </button>
           </div>
 
           {/* Filtro por Distrito Sanitário */}

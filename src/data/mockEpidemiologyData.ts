@@ -1,6 +1,6 @@
 import { SAO_LUIS_BAIRROS_GEOJSON } from './saoLuisGeoJson';
 import { BairroEpidemiology, RiskLevel, WeeklyDataSummary } from '../types/dengue';
-import { normalizeKey } from '../services/sheetsService';
+import { getCanonicalDistrictName, normalizeKey } from '../services/sheetsService';
 
 export function calculateRiskLevel(incidencia: number): RiskLevel {
   if (incidencia >= 500) return 'muito_alto';
@@ -76,8 +76,8 @@ function generateInitialSummary(semana: string, dataReferencia: string): WeeklyD
     const incidencia = populacao > 0 ? Math.round(((casos / populacao) * 100000) * 10) / 10 : 0;
     const nivelRisco = calculateRiskLevel(incidencia);
 
-    const rawDist = p.layer || p.Layer || p.distrito || 'Distrito Centro';
-    const distritoSanitario = normalizeKey(rawDist) === 'sao luis' ? 'Distrito Centro' : rawDist;
+    const rawDist = p.layer || p.Layer || p.distrito || 'DISTRITO 1 - CENTRO';
+    const distritoSanitario = getCanonicalDistrictName(rawDist);
 
     const item: BairroEpidemiology = {
       id,

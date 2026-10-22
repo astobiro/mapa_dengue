@@ -16,6 +16,8 @@ import {
   aggregateDistrictsData, 
   fetchEpidemiologyFromGoogleSheets, 
   findBairroData, 
+  findDistrictData,
+  getCanonicalDistrictName,
   normalizeKey 
 } from './services/sheetsService';
 import { normalizeGeoJsonCollection } from './utils/districtGeoJson';
@@ -43,8 +45,9 @@ export default function App() {
   const initialSheetUrl = queryParams.get('sheet') || queryParams.get('url') || '';
   const initialColBairro = queryParams.get('col_bairro') || queryParams.get('bairro_col') || '';
   const initialColCasos = queryParams.get('col_casos') || queryParams.get('casos_col') || '';
+  const initialColIncid = queryParams.get('col_incid') || queryParams.get('incid_col') || '';
   
-  // Métrica padrão: Número de Casos Prováveis ('casos')
+  // Métrica padrão: Número de Casos Prováveis ('casos') ou Incidência ('incidencia')
   const initialMetric = (queryParams.get('metric') as ChoroplethMetric) || 'casos';
   // Camada padrão: OpenStreetMap ('osm')
   const initialTheme = (queryParams.get('theme') as BasemapTheme) || 'osm';
@@ -63,6 +66,7 @@ export default function App() {
         if (initialSheetUrl) parsed.url = initialSheetUrl;
         if (initialColBairro) parsed.bairroColumn = initialColBairro;
         if (initialColCasos) parsed.casosColumn = initialColCasos;
+        if (initialColIncid) parsed.incidenciaColumn = initialColIncid;
         return parsed;
       }
     } catch {}
@@ -71,6 +75,7 @@ export default function App() {
       url: initialSheetUrl,
       bairroColumn: initialColBairro || undefined,
       casosColumn: initialColCasos || undefined,
+      incidenciaColumn: initialColIncid || undefined,
       autoRefreshIntervalSeconds: initialRefresh,
       sourceType: initialSheetUrl ? 'google_sheets' : 'local_demo',
       lastFetchedAt: new Date().toISOString()
@@ -189,24 +194,27 @@ export default function App() {
     return Object.keys(epidemiologyWeeks);
   }, [epidemiologyWeeks]);
 
-  // Lista de Distritos Sanitários únicos (removendo "São Luís" conforme solicitação)
+  // Lista de Distritos Sanitários únicos com nomes oficiais canônicos acentuados
   const distritosList = useMemo(() => {
-    const set = new Set<string>();
+    const canonicalSet = new Set<string>();
     Object.values(currentWeekSummary.bairros || {}).forEach(b => {
-      if (b.distritoSanitario) set.add(b.distritoSanitario);
+      if (b.distritoSanitario) canonicalSet.add(getCanonicalDistrictName(b.distritoSanitario));
     });
     geoJsonData.features.forEach(f => {
       const d = f.properties?.layer || f.properties?.Layer || f.properties?.LAYER || f.properties?.distrito || f.properties?.distritoSanitario;
-      if (d) set.add(d);
+      if (d) canonicalSet.add(getCanonicalDistrictName(d));
     });
-    return Array.from(set)
+    Object.values(districtsData || {}).forEach(d => {
+      if (d.distritoNome) canonicalSet.add(getCanonicalDistrictName(d.distritoNome));
+    });
+    return Array.from(canonicalSet)
       .filter(d => {
         if (!d || !d.trim()) return false;
         const norm = normalizeKey(d);
         return norm !== 'sao luis' && norm !== 'municipio de sao luis' && norm !== 'ilha de sao luis' && norm !== 'cidade de sao luis' && !norm.startsWith('saoluis');
       })
       .sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }, [currentWeekSummary, geoJsonData]);
+  }, [currentWeekSummary, geoJsonData, districtsData]);
 
   // Lista de Bairros para Busca
   const bairrosList = useMemo(() => {
@@ -260,8 +268,8 @@ export default function App() {
 
       const name = p.NM_BAIRRO || p.name || 'Bairro';
       const populacao = Number(p.POPULACAO) || 25000;
-      const rawD = p.layer || p.distrito || 'Distrito Centro';
-      const safeDist = normalizeKey(rawD) === 'sao luis' ? 'Distrito Centro' : rawD;
+      const rawD = p.layer || p.distrito || 'DISTRITO 1 - CENTRO';
+      const safeDist = getCanonicalDistrictName(rawD);
       return {
         id: selectedBairroId,
         bairroNome: name,
@@ -280,7 +288,7 @@ export default function App() {
   // Informações do Distrito Selecionado
   const selectedDistrict = useMemo<DistrictEpidemiology | null>(() => {
     if (!selectedDistrictName || !districtsData) return null;
-    return districtsData[selectedDistrictName] || null;
+    return findDistrictData(districtsData, selectedDistrictName) || null;
   }, [selectedDistrictName, districtsData]);
 
   const sheetsConfigRef = useRef(sheetsConfig);
@@ -310,7 +318,8 @@ export default function App() {
         activeGeo,
         {
           bairroColumn: cfg.bairroColumn,
-          casosColumn: cfg.casosColumn
+          casosColumn: cfg.casosColumn,
+          incidenciaColumn: cfg.incidenciaColumn
         }
       );
       
@@ -377,6 +386,7 @@ export default function App() {
         const sheetTab = (sheetsCfg.sheetName || configData.sheetName || '').trim();
         const colB = (sheetsCfg.bairroColumn || sheetsCfg.colunaBairro || configData.bairroColumn || configData.colunaBairro || '').trim();
         const colC = (sheetsCfg.casosColumn || sheetsCfg.colunaCasos || configData.casosColumn || configData.colunaCasos || '').trim();
+        const colIncid = (sheetsCfg.incidenciaColumn || sheetsCfg.colunaIncidencia || configData.incidenciaColumn || configData.colunaIncidencia || '').trim();
         const refreshSec = Number(sheetsCfg.autoRefreshIntervalSeconds || configData.autoRefreshIntervalSeconds) || 300;
 
         // Se houver URL da planilha definida no config.json e não sobrescrita por parâmetro de URL
@@ -386,6 +396,7 @@ export default function App() {
             sheetName: sheetTab || undefined,
             bairroColumn: colB || 'NM_BAIRRO',
             casosColumn: colC || 'N_CASOS',
+            incidenciaColumn: colIncid || 'INCID_BAIRRO',
             autoRefreshIntervalSeconds: refreshSec,
             sourceType: 'google_sheets',
             lastFetchedAt: new Date().toISOString()
@@ -394,13 +405,14 @@ export default function App() {
           setSheetsConfig(newConfig);
           // Sincroniza uma única vez na inicialização
           syncGoogleSheets(newConfig);
-        } else if (!initialSheetUrl && (colB || colC || sheetTab)) {
+        } else if (!initialSheetUrl && (colB || colC || colIncid || sheetTab)) {
           // Atualiza colunas e aba padrão caso não tenham sido definidas
           setSheetsConfig((prev) => ({
             ...prev,
             sheetName: prev.sheetName || (sheetTab || undefined),
             bairroColumn: prev.bairroColumn || (colB || undefined),
             casosColumn: prev.casosColumn || (colC || undefined),
+            incidenciaColumn: prev.incidenciaColumn || (colIncid || undefined),
             autoRefreshIntervalSeconds: prev.autoRefreshIntervalSeconds || refreshSec
           }));
         }
@@ -586,6 +598,8 @@ export default function App() {
             onSelectWeek={setSelectedWeek}
             viewLevel={viewLevel}
             onChangeViewLevel={handleChangeViewLevel}
+            metric={metric}
+            onChangeMetric={setMetric}
             filterDistrito={filterDistrito}
             onChangeDistrito={handleSelectDistrito}
             distritosList={distritosList}
@@ -616,6 +630,7 @@ export default function App() {
           selectedDistrictName={selectedDistrictName}
           onSelectDistrict={setSelectedDistrictName}
           metric={metric}
+          onChangeMetric={setMetric}
           basemap={basemap}
           onChangeBasemap={setBasemap}
           highlightSearchBairroId={searchedBairroId}
@@ -630,9 +645,7 @@ export default function App() {
             districtInfo={
               selectedDistrict || 
               (selectedBairro 
-                ? (districtsData[selectedBairro.distritoSanitario] || 
-                   Object.entries(districtsData).find(([k]) => normalizeKey(k) === normalizeKey(selectedBairro.distritoSanitario))?.[1] || 
-                   null) 
+                ? findDistrictData(districtsData, selectedBairro.distritoSanitario) || null
                 : null)
             }
             viewLevel={viewLevel}
@@ -665,6 +678,7 @@ export default function App() {
         currentSheetUrl={sheetsConfig.url}
         initialBairroColumn={sheetsConfig.bairroColumn}
         initialCasosColumn={sheetsConfig.casosColumn}
+        initialIncidenciaColumn={sheetsConfig.incidenciaColumn}
         selectedWeek={selectedWeek}
         availableWeeks={availableWeeks}
         filterDistrito={filterDistrito}

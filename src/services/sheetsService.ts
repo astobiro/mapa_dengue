@@ -1,19 +1,49 @@
 import Papa from 'papaparse';
-import { calculateRiskLevel } from '../data/mockEpidemiologyData';
 import { SAO_LUIS_BAIRROS_GEOJSON } from '../data/saoLuisGeoJson';
+import bairroDistritosData from '../data/bairroDistritosArrumado.json';
 import { BairroEpidemiology, DistrictEpidemiology, GeoJsonNeighborhoodCollection, WeeklyDataSummary } from '../types/dengue';
+import { 
+  normalizeKey, 
+  calculateRiskLevel, 
+  CANONICAL_DISTRICTS, 
+  getCanonicalDistrictName 
+} from '../utils/districtNames';
+
+export { 
+  normalizeKey, 
+  calculateRiskLevel, 
+  CANONICAL_DISTRICTS, 
+  getCanonicalDistrictName 
+};
 
 /**
- * Normaliza strings para busca e correspondência robusta entre planilha e GeoJSON
+ * Retorna a população oficial do distrito a partir de dados/bairro_distritos_arrumado.xlsx
  */
-export function normalizeKey(str: string): string {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // remove acentos
-    .replace(/[^a-z0-9]/g, '') // remove pontuações, espaços e hífens
-    .trim();
+export function getOfficialDistrictPopulation(distritoNome: string): number {
+  if (!distritoNome) return 0;
+  const normTarget = normalizeKey(distritoNome);
+  
+  for (const [key, val] of Object.entries(bairroDistritosData.distritos)) {
+    if (normalizeKey(key) === normTarget || normalizeKey(val.nomeOficial) === normTarget) {
+      return val.populacao;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Retorna os dados oficiais do bairro a partir de dados/bairro_distritos_arrumado.xlsx
+ */
+export function getOfficialBairroInfo(bairroNome: string) {
+  if (!bairroNome) return undefined;
+  const normTarget = normalizeKey(bairroNome);
+  
+  for (const [key, val] of Object.entries(bairroDistritosData.bairros)) {
+    if (normalizeKey(key) === normTarget || normalizeKey(val.nome) === normTarget) {
+      return val;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -52,8 +82,48 @@ export function findBairroData(
   return undefined;
 }
 
+
+
 /**
- * Agrega os dados epidemiológicos agrupando por Distrito Sanitário
+ * Busca de alta precisão de dados do distrito sanitário por nome ou chave normalizada
+ */
+export function findDistrictData(
+  districts: Record<string, DistrictEpidemiology> | undefined,
+  query: string | null | undefined
+): DistrictEpidemiology | undefined {
+  if (!districts || !query) return undefined;
+  if (districts[query]) return districts[query];
+  const norm = normalizeKey(query);
+  if (!norm) return undefined;
+  if (districts[norm]) return districts[norm];
+
+  const canonical = getCanonicalDistrictName(query);
+  if (districts[canonical]) return districts[canonical];
+
+  for (const [key, val] of Object.entries(districts)) {
+    if (normalizeKey(key) === norm || normalizeKey(val.distritoNome) === norm) {
+      return val;
+    }
+  }
+
+  // Busca por inclusão (mínimo de 4 caracteres)
+  if (norm.length >= 4) {
+    for (const [key, val] of Object.entries(districts)) {
+      const kNorm = normalizeKey(key);
+      const dNorm = normalizeKey(val.distritoNome);
+      if (kNorm.includes(norm) || norm.includes(kNorm) || dNorm.includes(norm) || norm.includes(dNorm)) {
+        return val;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Agrega os dados epidemiológicos agrupando por Distrito Sanitário.
+ * O cálculo da incidência do distrito utiliza rigorosamente a população oficial
+ * extraída de dados/bairro_distritos_arrumado.xlsx.
  */
 export function aggregateDistrictsData(
   bairrosData: Record<string, BairroEpidemiology>
@@ -61,40 +131,88 @@ export function aggregateDistrictsData(
   const districts: Record<string, DistrictEpidemiology> = {};
   const seenBairros = new Set<string>();
 
+  // 1. Inicializar todos os 9 distritos sanitários oficiais com seus nomes canônicos e população do Excel
+  Object.values(bairroDistritosData.distritos).forEach((d) => {
+    const canonicalName = getCanonicalDistrictName(d.nomeOficial);
+    districts[canonicalName] = {
+      distritoNome: canonicalName,
+      totalCasos: 0,
+      totalPopulacao: d.populacao,
+      incidencia: 0,
+      nivelRisco: 'baixo',
+      bairrosCount: 0,
+      bairros: []
+    };
+  });
+
+  // 2. Distribuir os casos e bairros em seus respectivos distritos
   Object.values(bairrosData).forEach((b) => {
     // Evita duplicar bairros registrados sob chaves redundantes
     if (seenBairros.has(b.id)) return;
     seenBairros.add(b.id);
 
-    const distRaw = b.distritoSanitario || 'Distrito Centro';
-    const distName = normalizeKey(distRaw) === 'sao luis' ? 'Distrito Centro' : distRaw;
-    if (!districts[distName]) {
-      districts[distName] = {
-        distritoNome: distName,
-        totalCasos: 0,
-        totalPopulacao: 0,
-        incidencia: 0,
-        nivelRisco: 'baixo',
-        bairrosCount: 0,
-        bairros: []
-      };
+    const distRaw = b.distritoSanitario || 'DISTRITO 1 - CENTRO';
+    const canonicalDistName = getCanonicalDistrictName(distRaw);
+    
+    // Localizar o distrito correspondente no mapa
+    let target = districts[canonicalDistName];
+    if (!target) {
+      const normDist = normalizeKey(distRaw);
+      const matchedKey = Object.keys(districts).find(k => normalizeKey(k) === normDist);
+      if (matchedKey) {
+        target = districts[matchedKey];
+      } else {
+        const offPop = getOfficialDistrictPopulation(canonicalDistName);
+        target = {
+          distritoNome: canonicalDistName,
+          totalCasos: 0,
+          totalPopulacao: offPop > 0 ? offPop : b.populacao,
+          incidencia: 0,
+          nivelRisco: 'baixo',
+          bairrosCount: 0,
+          bairros: []
+        };
+        districts[canonicalDistName] = target;
+      }
     }
 
-    districts[distName].totalCasos += b.casos;
-    districts[distName].totalPopulacao += b.populacao;
-    districts[distName].bairrosCount += 1;
-    districts[distName].bairros.push(b);
+    target.totalCasos += b.casos;
+    target.bairrosCount += 1;
+    target.bairros.push(b);
   });
 
+  // 3. Calcular a incidência rigorosa por 100.000 habitantes baseada na população oficial do Excel
+  // e indexar aliases (com/sem acento e normalizado) para compatibilidade 100% de lookup
+  const result: Record<string, DistrictEpidemiology> = {};
+
   Object.values(districts).forEach((d) => {
+    // Garante que a população venha do arquivo bairro_distritos_arrumado.xlsx
+    const officialPop = getOfficialDistrictPopulation(d.distritoNome);
+    if (officialPop > 0) {
+      d.totalPopulacao = officialPop;
+    }
+
     d.incidencia = d.totalPopulacao > 0
       ? Math.round(((d.totalCasos / d.totalPopulacao) * 100000) * 10) / 10
       : 0;
     d.nivelRisco = calculateRiskLevel(d.incidencia);
     d.bairros.sort((a, b) => b.casos - a.casos);
+
+    // 1. Chave Canônica (ex: "DISTRITO 5 - BEQUIMÃO")
+    result[d.distritoNome] = d;
+
+    // 2. Chave Normalizada (ex: "distrito5bequimao")
+    const normKey = normalizeKey(d.distritoNome);
+    if (normKey) result[normKey] = d;
+
+    // 3. Chave Desacentuada com hífens (ex: "DISTRITO 5 - BEQUIMAO")
+    const unaccented = d.distritoNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (unaccented !== d.distritoNome) {
+      result[unaccented] = d;
+    }
   });
 
-  return districts;
+  return result;
 }
 
 /**
@@ -153,9 +271,10 @@ function extractPopulationMap(geoJson?: GeoJsonNeighborhoodCollection): Map<stri
   dataset.features.forEach((feat) => {
     const p = feat.properties;
     const officialName = p.NM_BAIRRO || p.name || 'Bairro';
-    const populacao = Number(p.POPULACAO || p.populacao || p.POP) || 25000;
-    const rawDist = p.layer || p.Layer || p.LAYER || p.distrito || p.NM_DISTRIT || 'Distrito Centro';
-    const distrito = normalizeKey(rawDist) === 'sao luis' ? 'Distrito Centro' : rawDist;
+    const officialInfo = getOfficialBairroInfo(officialName);
+    const populacao = officialInfo?.populacao ?? (Number(p.POPULACAO || p.populacao || p.POP) || 25000);
+    const rawDist = officialInfo?.distrito ?? (p.layer || p.Layer || p.LAYER || p.distrito || p.NM_DISTRIT || 'DISTRITO 1 - CENTRO');
+    const distrito = getCanonicalDistrictName(rawDist);
     const featId = p.id || normalizeKey(officialName);
 
     const keyName = normalizeKey(officialName);
@@ -225,7 +344,7 @@ export async function fetchEpidemiologyFromGoogleSheets(
   rawUrl: string,
   sheetName?: string,
   geoJson?: GeoJsonNeighborhoodCollection,
-  customColumns?: { bairroColumn?: string; casosColumn?: string }
+  customColumns?: { bairroColumn?: string; casosColumn?: string; incidenciaColumn?: string }
 ): Promise<{
   weeks: Record<string, WeeklyDataSummary>;
   activeWeek: string;
@@ -251,7 +370,7 @@ export async function fetchEpidemiologyFromGoogleSheets(
 export function parseEpidemiologyCsv(
   csvText: string,
   geoJson?: GeoJsonNeighborhoodCollection,
-  customColumns?: { bairroColumn?: string; casosColumn?: string }
+  customColumns?: { bairroColumn?: string; casosColumn?: string; incidenciaColumn?: string }
 ): {
   weeks: Record<string, WeeklyDataSummary>;
   activeWeek: string;
@@ -283,17 +402,22 @@ export function parseEpidemiologyCsv(
 
   const customColBairro = customColumns?.bairroColumn?.trim();
   const customColCasos = customColumns?.casosColumn?.trim();
+  const customColIncid = customColumns?.incidenciaColumn?.trim();
 
   // Seleção por coluna informada pelo usuário ou detecção automática
   const colBairro = (customColBairro && keys.find(k => k === customColBairro || normalizeKey(k) === normalizeKey(customColBairro)))
     || findKey(['nm_bairro_prox', 'nmbairroprox', 'nm_bairro_corrigido', 'nmbairrocorrigido', 'nm_bairro', 'nmbairro', 'bairro', 'nome_do_bairro', 'nome']) 
     || keys[0] 
-    || 'NM_BAIRRO';
+    || 'NM_BAIRRO_PROX';
 
   const colCasos = (customColCasos && keys.find(k => k === customColCasos || normalizeKey(k) === normalizeKey(customColCasos)))
     || findKey(['n_casos', 'ncasos', 'numero_de_casos', 'casos', 'casos_provaveis', 'total_casos']) 
     || keys[1] 
     || 'N_CASOS';
+
+  const colIncidencia = (customColIncid && keys.find(k => k === customColIncid || normalizeKey(k) === normalizeKey(customColIncid)))
+    || findKey(['incid_bairro', 'incidbairro', 'incidencia_bairro', 'incid', 'incidencia', 'taxa_incidencia', 'tx_incid'])
+    || undefined;
 
   const colSemana = findKey(['semana', 'semana_epidemiologica', 'se', 'periodo']);
 
@@ -346,7 +470,19 @@ export function parseEpidemiologyCsv(
     const currentWeekObj = weeks[semana];
     const existing = currentWeekObj.bairros[finalId];
     const totalCasosBairro = (existing ? existing.casos : 0) + casos;
-    const incidencia = populacao > 0 ? Math.round(((totalCasosBairro / populacao) * 100000) * 10) / 10 : 0;
+
+    // Se houver valor explícito na coluna INCID_BAIRRO da planilha, utilizar diretamente
+    const rawIncid = colIncidencia && row[colIncidencia] !== undefined ? row[colIncidencia] : null;
+    let directIncidencia: number | null = null;
+    if (rawIncid !== null && String(rawIncid).trim() !== '') {
+      const parsedNum = parseBrazilianNumber(rawIncid);
+      if (!isNaN(parsedNum)) {
+        directIncidencia = Math.round(parsedNum * 10) / 10;
+      }
+    }
+
+    const calculatedIncid = populacao > 0 ? Math.round(((totalCasosBairro / populacao) * 100000) * 10) / 10 : 0;
+    const incidencia = directIncidencia !== null ? directIncidencia : calculatedIncid;
     const nivelRisco = calculateRiskLevel(incidencia);
 
     const item: BairroEpidemiology = {

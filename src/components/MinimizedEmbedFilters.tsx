@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MapViewLevel, WeeklyDataSummary } from '../types/dengue';
+import { ChoroplethMetric, MapViewLevel, WeeklyDataSummary } from '../types/dengue';
 import { 
   Calendar, 
   ChevronDown, 
@@ -21,6 +21,8 @@ interface MinimizedEmbedFiltersProps {
   onSelectWeek: (week: string) => void;
   viewLevel: MapViewLevel;
   onChangeViewLevel: (level: MapViewLevel) => void;
+  metric?: ChoroplethMetric;
+  onChangeMetric?: (m: ChoroplethMetric) => void;
   filterDistrito: string;
   onChangeDistrito: (distrito: string) => void;
   distritosList: string[];
@@ -40,6 +42,8 @@ export const MinimizedEmbedFilters: React.FC<MinimizedEmbedFiltersProps> = ({
   onSelectWeek,
   viewLevel,
   onChangeViewLevel,
+  metric = 'casos',
+  onChangeMetric,
   filterDistrito,
   onChangeDistrito,
   distritosList,
@@ -125,6 +129,32 @@ export const MinimizedEmbedFilters: React.FC<MinimizedEmbedFiltersProps> = ({
             Distritos
           </button>
         </div>
+
+        {/* Alternador de Métrica (Casos vs Incidência) */}
+        {onChangeMetric && (
+          <div className="flex items-center rounded-xl bg-slate-950/80 border border-slate-800 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => onChangeMetric('casos')}
+              className={`px-2 py-1 rounded-lg text-xs font-semibold transition ${
+                metric === 'casos' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Casos Prováveis"
+            >
+              Casos
+            </button>
+            <button
+              type="button"
+              onClick={() => onChangeMetric('incidencia')}
+              className={`px-2 py-1 rounded-lg text-xs font-semibold transition ${
+                metric === 'incidencia' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Taxa de Incidência (por 100 mil hab.)"
+            >
+              Incidência
+            </button>
+          </div>
+        )}
 
         {/* Seletor de Semana Epidemiológica */}
         {availableWeeks.length > 1 && (

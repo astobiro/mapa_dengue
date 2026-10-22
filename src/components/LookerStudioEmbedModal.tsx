@@ -18,6 +18,7 @@ interface LookerStudioEmbedModalProps {
   currentSheetUrl?: string;
   initialBairroColumn?: string;
   initialCasosColumn?: string;
+  initialIncidenciaColumn?: string;
   selectedWeek: string;
   availableWeeks: string[];
   filterDistrito: string;
@@ -35,6 +36,7 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
   currentSheetUrl,
   initialBairroColumn = '',
   initialCasosColumn = '',
+  initialIncidenciaColumn = '',
   selectedWeek,
   availableWeeks,
   filterDistrito,
@@ -57,6 +59,7 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
   const [sheetUrl, setSheetUrl] = useState<string>(currentSheetUrl || '');
   const [bairroCol, setBairroCol] = useState<string>(initialBairroColumn || '');
   const [casosCol, setCasosCol] = useState<string>(initialCasosColumn || '');
+  const [incidCol, setIncidCol] = useState<string>(initialIncidenciaColumn || '');
   const [geoJsonUrl, setGeoJsonUrl] = useState<string>(initialGeoJsonUrl || '');
 
   if (!isOpen) return null;
@@ -69,6 +72,7 @@ export const LookerStudioEmbedModal: React.FC<LookerStudioEmbedModalProps> = ({
   if (sheetUrl && sheetUrl.trim()) params.set('sheet', sheetUrl.trim());
   if (bairroCol && bairroCol.trim()) params.set('col_bairro', bairroCol.trim());
   if (casosCol && casosCol.trim()) params.set('col_casos', casosCol.trim());
+  if (incidCol && incidCol.trim()) params.set('col_incid', incidCol.trim());
   if (includeWeek && week) params.set('week', week);
   if (view && view !== 'bairro') params.set('view', view);
   if (distrito && distrito !== 'all') params.set('distrito', distrito);

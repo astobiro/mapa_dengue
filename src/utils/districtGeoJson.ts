@@ -1,7 +1,7 @@
 import * as polyclip from 'polyclip-ts';
 import dissolve from '@turf/dissolve';
 import { GeoJsonNeighborhoodCollection, GeoJsonNeighborhoodFeature } from '../types/dengue';
-import { normalizeKey } from '../services/sheetsService';
+import { normalizeKey, getCanonicalDistrictName } from '../services/sheetsService';
 
 /**
  * Cria uma coleção GeoJSON com os distritos sanitários unificados (dissolvidos),
@@ -31,13 +31,7 @@ export function createDissolvedDistrictsGeoJson(
         p.distritoSanitario || 
         '';
 
-      distName = String(distName).trim();
-      const norm = normalizeKey(distName);
-
-      // Se o distrito foi nomeado como "São Luís" ou genérico, reatribuir para Distrito Centro ou outro válido
-      if (!distName || norm === 'sao luis' || norm === 'municipio de sao luis' || norm === 'ilha de sao luis') {
-        distName = 'Distrito Centro';
-      }
+      distName = getCanonicalDistrictName(String(distName).trim());
 
       if (!districtGroups.has(distName)) {
         districtGroups.set(distName, []);

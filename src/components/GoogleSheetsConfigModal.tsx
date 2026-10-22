@@ -44,6 +44,7 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
   const [sheetName, setSheetName] = useState(config.sheetName || '');
   const [bairroColumn, setBairroColumn] = useState(config.bairroColumn || '');
   const [casosColumn, setCasosColumn] = useState(config.casosColumn || '');
+  const [incidenciaColumn, setIncidenciaColumn] = useState(config.incidenciaColumn || '');
   const [refreshInterval, setRefreshInterval] = useState(config.autoRefreshIntervalSeconds);
   const [copiedTemplate, setCopiedTemplate] = useState(false);
   const [activeTab, setActiveTab] = useState<'config' | 'guide'>('config');
@@ -58,6 +59,7 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
       setSheetName(config.sheetName || '');
       setBairroColumn(config.bairroColumn || '');
       setCasosColumn(config.casosColumn || '');
+      setIncidenciaColumn(config.incidenciaColumn || '');
       setRefreshInterval(config.autoRefreshIntervalSeconds ?? 300);
       setColumnsMessage(null);
     }
@@ -85,7 +87,7 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
       if (!bairroColumn.trim()) {
         const foundBairro = cols.find(c => {
           const norm = normalizeKey(c);
-          return norm === 'nmbairro' || norm === 'bairro' || norm === 'nomedobairro' || norm === 'nome';
+          return norm === 'nmbairroprox' || norm === 'nmbairro' || norm === 'bairro' || norm === 'nomedobairro' || norm === 'nome';
         });
         if (foundBairro) setBairroColumn(foundBairro);
       }
@@ -96,6 +98,14 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
           return norm === 'ncasos' || norm === 'numerodecasos' || norm === 'casos' || norm === 'totalcasos' || norm === 'casosprovaveis';
         });
         if (foundCasos) setCasosColumn(foundCasos);
+      }
+
+      if (!incidenciaColumn.trim()) {
+        const foundIncid = cols.find(c => {
+          const norm = normalizeKey(c);
+          return norm === 'incidbairro' || norm === 'incid' || norm === 'incidencia' || norm === 'taxaincidencia' || norm === 'txincid';
+        });
+        if (foundIncid) setIncidenciaColumn(foundIncid);
       }
 
       setColumnsMessage({
@@ -119,6 +129,7 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
       sheetName: sheetName.trim() || undefined,
       bairroColumn: bairroColumn.trim() || undefined,
       casosColumn: casosColumn.trim() || undefined,
+      incidenciaColumn: incidenciaColumn.trim() || undefined,
       autoRefreshIntervalSeconds: Number(refreshInterval),
       sourceType: url.trim() ? 'google_sheets' : 'local_demo',
       lastFetchedAt: new Date().toISOString()
@@ -130,6 +141,7 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
     setSheetName('');
     setBairroColumn('');
     setCasosColumn('');
+    setIncidenciaColumn('');
     setAvailableColumns([]);
     setColumnsMessage(null);
     onResetToDemo();
@@ -436,6 +448,59 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
                       Ex: <code className="text-slate-400">N_CASOS</code>, <code className="text-slate-400">Casos</code> ou <code className="text-slate-400">Total</code>
                     </p>
                   </div>
+
+                  {/* Coluna de Incidência (Opcional - padrão INCID_BAIRRO) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-slate-300">
+                        Coluna de Incidência do Bairro
+                      </label>
+                      {incidenciaColumn && (
+                        <button
+                          type="button"
+                          onClick={() => setIncidenciaColumn('')}
+                          className="text-[10px] text-slate-400 hover:text-rose-400"
+                        >
+                          Limpar (automático)
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        list="incid-columns-list"
+                        placeholder="Padrão: INCID_BAIRRO"
+                        value={incidenciaColumn}
+                        onChange={(e) => setIncidenciaColumn(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-xs text-white placeholder:text-slate-500 transition font-mono"
+                      />
+                      <datalist id="incid-columns-list">
+                        {availableColumns.map((c) => (
+                          <option key={c} value={c} />
+                        ))}
+                      </datalist>
+                    </div>
+
+                    {availableColumns.length > 0 && (
+                      <div className="mt-1.5">
+                        <select
+                          value={incidenciaColumn}
+                          onChange={(e) => setIncidenciaColumn(e.target.value)}
+                          className="w-full text-[11px] px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 focus:border-rose-500 focus:outline-none"
+                        >
+                          <option value="">-- Selecione das colunas da página --</option>
+                          {availableColumns.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Ex: <code className="text-slate-400">INCID_BAIRRO</code>, <code className="text-slate-400">Incidência</code> ou <code className="text-slate-400">Taxa</code> (se vazio, calcula por 100 mil hab.)
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -447,11 +512,11 @@ export const GoogleSheetsConfigModal: React.FC<GoogleSheetsConfigModalProps> = (
                     {config.sourceType === 'google_sheets' ? 'Planilha Ativa' : 'Dados Modelo São Luís (Demonstração)'}
                   </span>
                 </div>
-                {(config.bairroColumn || config.casosColumn) && (
+                {(config.bairroColumn || config.casosColumn || config.incidenciaColumn) && (
                   <div className="flex items-center justify-between text-slate-400 text-[11px]">
                     <span>Colunas Configuradas:</span>
                     <span className="text-rose-400 font-mono">
-                      Bairro: {config.bairroColumn || 'Auto'} | Casos: {config.casosColumn || 'Auto'}
+                      Bairro: {config.bairroColumn || 'Auto'} | Casos: {config.casosColumn || 'Auto'} | Incid: {config.incidenciaColumn || 'Auto'}
                     </span>
                   </div>
                 )}
